@@ -6,7 +6,8 @@ Mo's personal phone app for planning, tracking and reviewing each day. It's a PW
 
 ## How it works
 - It's plain HTML, CSS and JS with no build step and no frameworks. It's fast on any phone.
-- Data is saved on the phone (`localStorage`). Use Settings → Export backup to keep a copy.
+- Data is saved on the phone (`localStorage`). It also syncs to Firebase Firestore after you sign in with Google (Settings → Cloud sync). Edits made offline upload when you're back online.
+- Sync code is in `sync.js`. The Firebase SDK 13.2.0 is self-hosted in `vendor/`. Data is stored at `users/{uid}/parts/{core|tx|m-YYYY-MM}`.
 - `sw.js` caches the app, so it opens with no internet.
 - The schedule starts on cycle 1, day 1 = Mon 9 Nov 2026 (`START` in `app.js`). Reports cover 10-day periods.
 

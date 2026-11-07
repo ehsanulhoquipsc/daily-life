@@ -1,6 +1,6 @@
 'use strict';
 /* Daily Life — single-file app. Data lives on the phone (localStorage), works offline. */
-const VERSION = '1.0.0';
+const VERSION = '1.1.0';
 const KEY = 'dl:v1';
 const START = '2026-11-09'; // cycle 1, day 1
 
@@ -38,22 +38,23 @@ const DEF = () => ({
   periods: {}, timer: null,
   meta: { created: Date.now(), updated: 0, lastBackup: 0 }
 });
-function load() {
-  try {
-    const raw = JSON.parse(localStorage.getItem(KEY) || 'null');
-    if (!raw) return DEF();
+function normalize(raw) {
     const d = DEF();
     for (const k of Object.keys(d)) if (raw[k] == null) raw[k] = d[k];
     raw.settings = Object.assign(d.settings, raw.settings);
     raw.habits = Object.assign(d.habits, raw.habits);
     raw.house = Object.assign(d.house, raw.house);
+    raw.meta = Object.assign(d.meta, raw.meta);
     return raw;
-  } catch (e) { return DEF(); }
+}
+function load() {
+  try { const raw = JSON.parse(localStorage.getItem(KEY) || 'null'); return raw ? normalize(raw) : DEF(); } catch (e) { return DEF(); }
 }
 let db = load();
 function save() {
   db.meta.updated = Date.now();
   try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) { toast('Storage full — export a backup in Settings'); }
+  if (window.DLSync) window.DLSync.changed();
 }
 const day = (k) => (db.days[k] = db.days[k] || { b: {}, p: {}, h: {}, x: [], done: '', blockers: '', fin: false, time: {}, log: [] });
 const peekDay = (k) => db.days[k] || { b: {}, p: {}, h: {}, x: [], done: '', blockers: '', fin: false, time: {}, log: [] };
@@ -163,6 +164,19 @@ const P = {
 };
 const ic = (n, s = 22, w = 2, extra = '') => '<svg width="' + s + '" height="' + s + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="' + w + '" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" ' + extra + '>' + P[n] + '</svg>';
 
+/* ---------- sync bridge (sync.js plugs in here) ---------- */
+const SYNC = { loaded: false, failed: false, user: null, state: 'idle', pending: false, last: 0, error: '' };
+window.DL = {
+  KEY, VERSION, SYNC,
+  get: () => db,
+  normalize, fresh: DEF,
+  replace(nd) { db = normalize(nd); try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) {} applyTheme(); softRender(); },
+  update() { softRender(); },
+  toast: (m) => toast(m),
+  hasData: () => db.tasks.length + db.tx.length + db.ideas.length + db.reminders.length + Object.keys(db.days).length + Object.keys(db.health).length + db.house.items.length + db.habits.typing.length > 0
+};
+function softRender() { const a = document.activeElement; if (a && /INPUT|TEXTAREA|SELECT/.test(a.tagName) && a.closest('#view')) return; if (!$('#sheet').hidden) return; render(true); }
+
 /* ---------- ui state ---------- */
 const ui = { tDate: null, taskRange: 'all', taskProj: 'all', inboxTab: 'rem', period: null, monthOff: 0 };
 
@@ -244,9 +258,17 @@ function vHome() {
 function weekKeys(k) { const d = parseD(k).getDay(); const mon = addD(k, -((d + 6) % 7)); return [0, 1, 2, 3, 4, 5, 6].map((i) => addD(mon, i)); }
 function elapsed() { const t = db.timer; if (!t) return '00:00:00'; const s = Math.floor((Date.now() - t.start) / 1000); return pad(Math.floor(s / 3600)) + ':' + pad(Math.floor(s / 60) % 60) + ':' + pad(s % 60); }
 function syncPill() {
-  const on = navigator.onLine;
-  return '<a href="#settings" class="sync' + (on ? '' : ' off') + '"><i></i>' + (on ? 'Saved on phone · works offline' : 'Offline · still saving') + '</a>';
+  const on = navigator.onLine; const S = SYNC;
+  let t, off = false;
+  if (S.user) {
+    if (!on) { t = 'Offline · will sync later'; off = true; }
+    else if (S.state === 'error') { t = 'Sync problem · tap'; off = true; }
+    else if (S.state === 'syncing' || S.pending) t = 'Syncing…';
+    else t = 'Synced' + (S.last ? ' · ' + ago(S.last) : '');
+  } else { t = on ? 'Saved on phone · sign in to sync' : 'Offline · still saving'; off = !on; }
+  return '<a href="#settings" class="sync' + (off ? ' off' : '') + '"><i></i>' + esc(t) + '</a>';
 }
+function ago(ts) { const s = Math.round((Date.now() - ts) / 1000); return s < 45 ? 'just now' : s < 3600 ? Math.round(s / 60) + 'm ago' : s < 86400 ? Math.round(s / 3600) + 'h ago' : nice(dkey(new Date(ts))); }
 function remWhen(w) { const d = new Date(w); const k = dkey(d); const t = nowInfo().k; const hm = pad(d.getHours()) + ':' + pad(d.getMinutes()); return (k === dkey() ? 'Today' : k === addD(dkey(), 1) ? 'Tomorrow' : nice(k)) + ' ' + fmtTs(hm); }
 
 /* =================== TODAY =================== */
@@ -504,11 +526,22 @@ function vSettings() {
     '<section class="card"><h2>Goals</h2><div class="grid2">' + fld('pagesGoal', 'Pages per day', S.pagesGoal) + fld('wpmGoal', 'Typing target (WPM)', S.wpmGoal) + fld('screenLimit', 'Screen limit (min)', S.screenLimit) + fld('waterGoal', 'Water (glasses)', S.waterGoal) + fld('kcalGoal', 'Calories (kcal)', S.kcalGoal) + fld('proteinGoal', 'Protein (g)', S.proteinGoal) + fld('weightGoal', 'Goal weight (kg)', S.weightGoal) + '</div></section>' +
     '<section class="card"><h2>Money</h2><div class="grid2">' + fld('budget', 'Monthly budget', S.budget) + fld('currency', 'Currency symbol', S.currency, 'text') + '</div></section>' +
     '<section class="card"><div class="row between"><div class="grow"><h2>Reminder alerts</h2><div class="small muted">Pops up a notification when a reminder is due (while the app is open or recently used).</div></div><button class="switch' + (S.alerts ? ' on' : '') + '" data-a="alerts" role="switch" aria-checked="' + !!S.alerts + '" aria-label="Reminder alerts"></button></div></section>' +
+    syncCard() +
     '<section class="card"><h2>Your data</h2><div class="sm muted">Everything is saved on this phone and works offline (' + (size / 1024).toFixed(1) + ' KB). ' + (db.meta.lastBackup ? 'Last backup ' + nice(dkey(new Date(db.meta.lastBackup))) + '.' : 'No backup yet — export one now and then.') + '</div>' +
     '<div class="sync' + (navigator.onLine ? '' : ' off') + '" style="align-self:flex-start"><i></i>' + (navigator.onLine ? 'Online' : 'Offline') + '</div>' +
     '<button class="btn full" data-a="export">Export backup (.json)</button><label class="btn ghost full" style="cursor:pointer">Import backup<input type="file" accept="application/json,.json" data-c="import" class="sr"></label>' +
     '<button class="btn ghost full" data-a="reset" style="color:var(--bad)">Erase all data</button></section>' +
     '<section class="card"><h2>Install</h2><div class="sm muted">In Chrome tap ⋮ → <b>Add to Home screen</b> (or <b>Install app</b>). It then opens full-screen like a normal app.</div>' + (window.__installEvt ? '<button class="btn full" data-a="install">Install now</button>' : '') + '</section>';
+}
+
+function syncCard() {
+  const S = SYNC;
+  let body;
+  if (!S.loaded && !S.failed) body = '<div class="sm muted">' + (navigator.onLine ? 'Loading sync…' : 'Connect to the internet once to turn on sync.') + '</div>';
+  else if (S.failed) body = '<div class="sm muted">Couldn\'t load sync (no internet?). Your data is still saved on this phone.</div><button class="btn ghost full" data-a="syncRetry">Try again</button>';
+  else if (!S.user) body = '<div class="sm muted">Sign in to back up everything to your Google account and sync between your phone and laptop. Works offline — changes upload when you\'re back online.</div><button class="btn full" data-a="signIn"><svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-7.9l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg> Sign in with Google</button>';
+  else body = '<div class="row"><div class="grow"><div class="b sm">' + esc(S.user.email || S.user.name || 'Signed in') + '</div><div class="small muted">' + (S.state === 'error' ? 'Problem: ' + esc(S.error) : !navigator.onLine ? 'Offline — changes will upload later' : S.pending || S.state === 'syncing' ? 'Syncing…' : 'Synced' + (S.last ? ' ' + ago(S.last) : '')) + '</div></div><span class="pill" style="background:var(--' + (S.state === 'error' ? 'bad' : 'good') + '-bg);color:var(--' + (S.state === 'error' ? 'bad' : 'good') + '-fg)">' + (S.state === 'error' ? 'Error' : 'On') + '</span></div><div class="grid2"><button class="btn ghost sm" data-a="syncNow">Sync now</button><button class="btn ghost sm" data-a="signOut">Sign out</button></div>';
+  return '<section class="card"><h2>Cloud sync</h2>' + body + '</section>';
 }
 
 /* =================== ROUTER / RENDER =================== */
@@ -622,6 +655,10 @@ const A = {
   },
   export: () => { const b = new Blob([JSON.stringify(db, null, 1)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'daily-life-backup-' + dkey() + '.json'; document.body.appendChild(a); a.click(); a.remove(); db.meta.lastBackup = Date.now(); commit('Backup downloaded'); },
   reset: () => { if (!confirm('Erase ALL data on this phone? Export a backup first if unsure.')) return; if (!confirm('Really erase everything?')) return; db = DEF(); commit('All data erased'); },
+  signIn: () => (window.DLSync ? window.DLSync.signIn() : toast('Sync is still loading')),
+  signOut: () => { if (window.DLSync && confirm('Sign out? Your data stays on this phone.')) window.DLSync.signOut(); },
+  syncNow: () => window.DLSync && window.DLSync.syncNow(),
+  syncRetry: () => loadSync(),
   install: async () => { const e = window.__installEvt; if (!e) return; e.prompt(); await e.userChoice; window.__installEvt = null; render(true); }
 };
 const CH = {
@@ -678,5 +715,12 @@ function checkReminders() {
 
 /* boot */
 applyTheme(); render();
+function loadSync() {
+  if (location.protocol === 'file:' || window.DLSync) return;
+  SYNC.failed = false; softRender();
+  import('./sync.js').then(() => { SYNC.loaded = true; softRender(); }).catch((e) => { console.warn('sync unavailable', e); SYNC.failed = true; softRender(); });
+}
+loadSync();
+window.addEventListener('online', () => { if (SYNC.failed) loadSync(); });
 if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => {});
 if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
