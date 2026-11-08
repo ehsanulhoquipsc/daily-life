@@ -1,6 +1,6 @@
 'use strict';
 /* Daily Life — single-file app. Data lives on the phone (localStorage), works offline. */
-const VERSION = '1.1.0';
+const VERSION = '1.2.0';
 const KEY = 'dl:v1';
 const START = '2026-11-09'; // cycle 1, day 1
 
@@ -129,17 +129,21 @@ function dayScore(k) {
   const tot = tb.length + 5 + hs.total + top.length;
   return { pct: tot ? Math.round(((bd + pr + hs.done + td) / tot) * 100) : 0, bd, bt: tb.length, pOn: PRAYERS(k).filter(([id]) => dd.p[id] === 'on' || dd.p[id] === 'late').length, hs, td, tt: top.length };
 }
+// "Never miss twice": one missed day doesn't break a chain; two in a row does.
 function streak(test) {
-  const t = nowInfo().k; let k = test(t) ? t : addD(t, -1); let n = 0;
-  while (n < 400 && test(k)) { n++; k = addD(k, -1); }
+  const t = nowInfo().k; let k = test(t) ? t : addD(t, -1); let n = 0, gap = 0;
+  for (let i = 0; i < 800; i++) { if (test(k)) { n++; gap = 0; } else if (++gap >= 2) break; k = addD(k, -1); }
   return n;
 }
 function best(test) {
   const keys = Object.keys(db.days).concat(Object.keys(db.health)).sort(); if (!keys.length) return 0;
-  let k = keys[0], b = 0, c = 0; const end = nowInfo().k;
-  for (let i = 0; i < 800 && k <= end; i++) { if (test(k)) { c++; b = Math.max(b, c); } else c = 0; k = addD(k, 1); }
+  let k = keys[0], b = 0, c = 0, gap = 0; const end = nowInfo().k;
+  for (let i = 0; i < 800 && k <= end; i++) { if (test(k)) { c++; gap = 0; b = Math.max(b, c); } else if (++gap >= 2) c = 0; k = addD(k, 1); }
   return b;
 }
+// missed yesterday, not yet done today, chain still alive -> nudge
+function atRisk(test) { const t = nowInfo().k, y = addD(t, -1); return !test(t) && !test(y) && streak(test) > 0; }
+const HABIT_TESTS = () => [['Reading', (k) => !!peekDay(k).h.read, 'habits'], ['Typing', (k) => !!peekDay(k).h.type, 'habits'], ['Speaking', (k) => !!peekDay(k).h.talk, 'habits'], ['All 5 prayers', (k) => PRAYERS(k).every(([id]) => peekDay(k).p[id]), 'today']];
 const allPrayers = (k) => PRAYERS(k).every(([id]) => peekDay(k).p[id]);
 const didRead = (k) => !!peekDay(k).h.read;
 const didType = (k) => !!peekDay(k).h.type;
@@ -243,6 +247,7 @@ function vHome() {
     '<div class="row" style="gap:8px"><a href="#settings" class="iconbtn" aria-label="Settings">' + ic('gear', 20) + '</a><a href="#inbox" class="iconbtn" aria-label="Inbox' + (dueRem ? ', ' + dueRem + ' due' : '') + '">' + ic('bell', 20) + (dueRem ? '<i class="dotbadge"></i>' : '') + '</a></div></header>' +
     '<a href="#today" class="hero"><svg width="88" height="88" viewBox="0 0 88 88" role="img" aria-label="Today ' + sc.pct + ' percent"><circle cx="44" cy="44" r="' + R + '" fill="none" stroke="rgba(255,255,255,.14)" stroke-width="9"/><circle cx="44" cy="44" r="' + R + '" fill="none" stroke="#6FCF97" stroke-width="9" stroke-linecap="round" stroke-dasharray="' + (C * sc.pct / 100).toFixed(1) + ' ' + C.toFixed(1) + '" transform="rotate(-90 44 44)"/><text x="44" y="46" text-anchor="middle" fill="currentColor" font-size="20" font-weight="800">' + sc.pct + '%</text><text x="44" y="62" text-anchor="middle" fill="currentColor" opacity=".6" font-size="10">today</text></svg>' +
     '<div class="grow"><div class="sm" style="color:var(--heroMuted)">' + cyc + '</div><div class="bar" style="background:rgba(255,255,255,.14);margin:8px 0 12px"><i style="width:' + cycPct + '%;background:#fff"></i></div><div class="row between"><div class="stat"><b>' + sc.pOn + '/5</b><span>Prayers</span></div><div class="stat"><b>' + sc.hs.done + '/' + sc.hs.total + '</b><span>Habits</span></div><div class="stat"><b>' + sc.td + '/' + (sc.tt || 3) + '</b><span>Top 3</span></div><div class="stat"><b>' + sc.bd + '/' + sc.bt + '</b><span>Blocks</span></div></div></div></a>' +
+    morningCard(k) + comebackCard() +
     nowCard +
     '<section aria-label="Challenges"><div class="head" style="margin-bottom:8px"><h2>Challenges</h2><a class="link" href="#reports" style="color:var(--muted)">Reports ›</a></div><div class="grid2">' + ch + '</div></section>' +
     '<section class="card tight"><div class="head"><h2>Top 3 today</h2><a class="link" href="#tasks" style="color:var(--muted)">All tasks ›</a></div><div>' + topHtml + '</div></section>' +
@@ -254,6 +259,32 @@ function vHome() {
     '<section class="card tight"><div class="head"><h2>This week</h2><span class="sm muted">' + fmtDur(wkMin) + ' tracked</span></div><div class="row" style="align-items:flex-end;gap:4px">' + bars + '</div></section>' +
     '<a href="#money" class="card tight"><div class="head"><h2>Money · ' + MONL[parseD(k).getMonth()] + '</h2><span class="link">Open ›</span></div><div class="row between"><div><span class="xb" style="font-size:22px">' + money(spent) + '</span><span class="sm muted"> of ' + money(bud) + '</span></div>' + (owed > 0 ? '<span class="pill" style="background:var(--house-bg);color:var(--house)">Household: ' + money(owed) + ' owed</span>' : '') + '</div><div class="bar"><i style="width:' + Math.min(100, pct(spent, bud)) + '%;background:' + (spent > bud ? 'var(--bad)' : 'var(--good)') + '"></i></div></a>' +
     (rem ? '<a href="#inbox" class="card tight" style="background:var(--warn-bg);border-color:transparent"><div class="row between"><div class="grow"><div class="small b" style="color:var(--warn-fg)">REMINDER' + (rem.when ? ' · ' + remWhen(rem.when) : '') + '</div><div class="b" style="color:var(--warn-fg)">' + esc(rem.t) + '</div></div><span class="link" style="color:var(--warn-fg)">View ›</span></div></a>' : '');
+}
+function morningCard(k) {
+  if (k !== nowInfo().k) return '';
+  const pl = peekDay(k).plan;
+  if (pl && pl.done) {
+    const t = pl.mitTask ? db.tasks.find((x) => x.id === pl.mitTask) : null;
+    const label = t ? t.t : pl.mit; const done = t ? t.st === 'done' : !!pl.mitDone;
+    return '<section class="card tight" style="border:2px solid var(--warn)"><div class="row between"><span class="small xb" style="color:var(--warn-fg)">TODAY\'S ONE THING</span><button class="link" data-a="planEdit" style="color:var(--muted)">Edit</button></div>' +
+      '<div class="row"><button class="check' + (done ? ' on' : '') + '" data-a="mitToggle" aria-label="Mark one thing done">' + (done ? ic('check', 14, 3, 'style="color:#fff"') : '') + '</button><span class="grow xb" style="font-size:17px;' + (done ? 'text-decoration:line-through;color:var(--muted)' : '') + '">' + esc(label || 'Deleted task') + '</span></div>' +
+      (pl.intent ? '<div class="sm muted" style="font-style:italic">\u201C' + esc(pl.intent) + '\u201D</div>' : '') + '</section>';
+  }
+  const open = db.tasks.filter((t) => t.st !== 'done').sort((a, b) => (b.top === k) - (a.top === k) || ((a.due || '9') < (b.due || '9') ? -1 : 1)).slice(0, 5);
+  const S = sched(k); const upcoming = S.blocks.filter((b) => b.c !== 'pray').slice(0, 4).map((b) => fmtTs(b.s) + ' ' + b.l).join(' · ');
+  const h = new Date().getHours();
+  return '<section class="card" style="border:2px solid var(--warn)"><div class="row between"><h2>' + (h < 12 ? 'Morning plan' : 'Plan your day') + '</h2><span class="small muted">1 minute</span></div>' +
+    '<div class="small b muted">1 · What\'s the ONE thing that makes today a win?</div>' +
+    (open.length ? '<div class="chips" id="mit">' + open.map((t) => '<button class="chip" data-a="pickChip" data-group="mit" data-v="' + t.id + '" style="max-width:100%;overflow:hidden;text-overflow:ellipsis">' + esc(t.t) + '</button>').join('') + '</div>' : '') +
+    '<label class="sr" for="mitText">Or type it</label><input id="mitText" class="in" placeholder="' + (open.length ? 'or type something else…' : 'e.g. Finish Doctrin abstract') + '">' +
+    '<div class="small b muted">2 · How do you want to show up today?</div><label class="sr" for="intent">Intention</label><input id="intent" class="in" placeholder="e.g. calm, focused, no phone in main block">' +
+    '<div class="small b muted">3 · Today at a glance</div><div class="sm" style="line-height:1.5"><b>' + esc(S.focus) + '</b> · ' + esc(upcoming) + ' · 5 prayers</div>' +
+    '<button class="btn full" data-a="planDone">Start my day</button></section>';
+}
+function comebackCard() {
+  const r = HABIT_TESTS().filter(([, t]) => atRisk(t));
+  if (!r.length) return '';
+  return '<section class="card tight" style="background:var(--warn-bg);border-color:transparent"><div class="small xb" style="color:var(--warn-fg)">NEVER MISS TWICE</div><div class="sm" style="color:var(--warn-fg)">You missed <b>' + r.map((x) => esc(x[0])).join(', ') + '</b> yesterday. Missing once is normal — do it today and your chain stays alive.</div><div class="chips">' + r.map(([n, t, to]) => '<a href="#' + to + '" class="chip" style="display:inline-flex;align-items:center;background:var(--card)">' + esc(n) + ' · ' + streak(t) + '-day chain ›</a>').join('') + '</div></section>';
 }
 function weekKeys(k) { const d = parseD(k).getDay(); const mon = addD(k, -((d + 6) % 7)); return [0, 1, 2, 3, 4, 5, 6].map((i) => addD(mon, i)); }
 function elapsed() { const t = db.timer; if (!t) return '00:00:00'; const s = Math.floor((Date.now() - t.start) / 1000); return pad(Math.floor(s / 3600)) + ':' + pad(Math.floor(s / 60) % 60) + ':' + pad(s % 60); }
@@ -350,6 +381,22 @@ function taskSheet(t) {
     '<button class="btn ghost full" data-a="sheetClose">Cancel</button>';
 }
 
+function finishSheet(bk) {
+  return '<h2>Finished \u201C' + esc(bk.title) + '\u201D</h2><div class="sm muted">' + (bk.notes || []).length + ' takeaways saved. Two quick questions so the book sticks.</div>' +
+    '<div class="small b muted">Rating</div><div class="chips" id="frate" style="display:grid;grid-template-columns:repeat(5,1fr)">' + [1, 2, 3, 4, 5].map((n) => '<button class="chip' + (n === 4 ? ' on' : '') + '" data-a="pickChip" data-group="frate" data-v="' + n + '" style="height:44px">' + n + '★</button>').join('') + '</div>' +
+    '<label class="f">The biggest lesson, in one sentence<textarea id="fbig" class="in" rows="2"></textarea></label>' +
+    '<label class="f">One action you\'ll take (added to Tasks)<input id="fact" class="in" placeholder="e.g. Two-minute rule for typing practice"></label>' +
+    '<button class="btn full" data-a="bookFinishSave">Save &amp; finish book</button><button class="btn ghost full" data-a="sheetClose">Cancel</button>';
+}
+function bookSheet(f, i) {
+  if (!f) return '<button class="btn full" data-a="sheetClose">Close</button>';
+  return '<h2>' + esc(f.title) + '</h2><div class="sm muted">' + esc(f.author || '') + (f.start ? ' · ' + nice(f.start) + ' – ' : ' · finished ') + nice(f.d) + (f.rating ? ' · ' + f.rating + '★' : '') + '</div>' +
+    (f.big ? '<div class="card tight" style="background:var(--doc-bg);border-color:transparent"><div class="small xb" style="color:var(--doc-fg)">BIGGEST LESSON</div><div class="sm" style="color:var(--doc-fg)">' + esc(f.big) + '</div></div>' : '') +
+    (f.action ? '<div class="sm"><b>Action:</b> ' + esc(f.action) + '</div>' : '') +
+    '<div class="b sm">Takeaways (' + (f.notes || []).length + ')</div>' + ((f.notes || []).map((n) => '<div class="sm" style="background:var(--soft);border-radius:12px;padding:10px 12px;line-height:1.4;white-space:pre-wrap">' + esc(n.t) + (n.p ? '<span class="small muted" style="display:block">p.' + n.p + '</span>' : '') + '</div>').join('') || empty('No notes saved for this book.')) +
+    '<button class="btn full" data-a="bookIdea" data-i="' + i + '">Turn into a reel / post idea</button><button class="btn ghost full" data-a="sheetClose">Close</button>';
+}
+
 /* =================== MONEY =================== */
 const SECT = [['food', 'Groceries', '#3E8E5E'], ['eat', 'Eating out', '#C26A1F'], ['transport', 'Transport', '#3F86C4'], ['bills', 'Bills & phone', '#8C8A84'], ['shop', 'Shopping', '#C2557F'], ['health', 'Health', '#0F766E'], ['study', 'Study', '#8B63C9'], ['fun', 'Fun', '#D4A017'], ['family', 'Gifts & family', '#B42318'], ['other', 'Other', '#5B5A56']];
 const sect = (id) => SECT.find((s) => s[0] === id) || SECT[9];
@@ -440,10 +487,15 @@ function vHealth() {
 function vHabits() {
   const k = nowInfo().k; const H = db.habits; const S = db.settings; const bk = H.book;
   const tile = (n, v, b, c) => '<div class="kpi"><div class="row small b" style="gap:5px;color:var(--' + c + '-fg)">' + ic('flame', 13, 2.4) + n + '</div><b>' + v + '<span class="small muted" style="font-weight:600"> days</span></b><span class="small muted">best ' + b + '</span></div>';
+  const risk = HABIT_TESTS().slice(0, 3).filter(([, t]) => atRisk(t));
   const todayPages = (H.pages || {})[k] || 0;
   const reading = bk ? '<div class="row" style="gap:14px"><div style="width:58px;height:84px;flex:0 0 58px;border-radius:8px;background:var(--doc);color:#fff;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:800">' + esc((bk.title || '?').trim().charAt(0).toUpperCase()) + '</div><div class="grow"><div class="small muted b">NOW READING</div><div class="xb" style="font-size:17px;line-height:1.25">' + esc(bk.title) + '</div><div class="sm muted">' + esc(bk.author) + '</div><div class="bar" style="margin-top:8px"><i style="width:' + pct(bk.page, bk.total) + '%;background:var(--doc)"></i></div><div class="small muted" style="margin-top:4px">page ' + bk.page + ' of ' + bk.total + ' · ' + pct(bk.page, bk.total) + '%' + (bk.total > bk.page ? ' · ~' + Math.ceil((bk.total - bk.page) / Math.max(1, S.pagesGoal)) + ' days left' : '') + '</div></div></div>' +
     '<div class="row between" style="border-top:1px solid var(--line);padding-top:12px"><div><div class="b sm">Pages read today</div><div class="small b" style="color:' + (todayPages >= S.pagesGoal ? 'var(--good)' : 'var(--muted)') + '">' + (todayPages >= S.pagesGoal ? 'Goal done' : (S.pagesGoal - todayPages) + ' more to hit ' + S.pagesGoal) + '</div></div><div class="step"><button data-a="pages" data-n="-1" aria-label="One page less">−</button><output>' + todayPages + '</output><button class="p" data-a="pages" data-n="1" aria-label="One page more">+</button></div></div>'
     : empty('Add the book you\'re reading below.');
+  const notes = bk ? (bk.notes || []) : [];
+  const learn = bk ? '<div class="col" style="border-top:1px solid var(--line);padding-top:10px;gap:8px"><div class="row between"><span class="b sm">Takeaways &amp; notes</span><span class="small muted">' + notes.length + '</span></div>' +
+    notes.map((n, i) => '<div class="row" style="align-items:flex-start;background:var(--soft);border-radius:12px;padding:8px 4px 8px 12px"><span class="grow sm" style="line-height:1.4;padding-top:4px;white-space:pre-wrap">' + esc(n.t) + '<span class="small muted" style="display:block">' + (n.p ? 'p.' + n.p + ' · ' : '') + nice(n.d) + '</span></span><button class="link" data-a="noteIdea" data-i="' + i + '" style="white-space:nowrap">To idea</button><button class="del" data-a="bookNoteDel" data-i="' + i + '" aria-label="Delete note">' + ic('trash', 16) + '</button></div>').join('') +
+    '<label class="sr" for="bkn">New takeaway</label><textarea id="bkn" class="in" rows="2" placeholder="A lesson or idea from today\'s pages, in your own words…"></textarea><div class="row"><label class="sr" for="bknp">Page</label><input id="bknp" type="number" inputmode="numeric" class="in" placeholder="page" style="width:100px" value="' + (bk.page || '') + '"><button class="btn ghost sm grow" data-a="bookNote">Save takeaway</button></div></div>' : '';
   const bookForm = '<details' + (bk ? '' : ' open') + ' style="border-top:1px solid var(--line);padding-top:6px"><summary>' + (bk ? 'Change book' : 'Add a book') + '</summary><div class="col" style="margin-top:6px"><label class="f">Book name<input id="bt" class="in" value="' + esc(bk ? bk.title : '') + '"></label><div class="grid2"><label class="f">Author<input id="ba" class="in" value="' + esc(bk ? bk.author : '') + '"></label><label class="f">Total pages<input id="bn" type="number" inputmode="numeric" class="in" value="' + esc(bk ? bk.total : '') + '"></label></div>' + (bk ? '<label class="f">Current page<input id="bp" type="number" inputmode="numeric" class="in" value="' + bk.page + '"></label>' : '') + '<button class="btn full" data-a="bookSave">' + (bk ? 'Save changes' : 'Start reading') + '</button>' + (bk ? '<button class="btn ghost full" data-a="bookFinish">Mark as finished</button>' : '') + '</div></details>';
   const yr = String(new Date().getFullYear());
   const fin = H.finished.filter((f) => (f.d || '').slice(0, 4) === yr);
@@ -455,9 +507,10 @@ function vHabits() {
   const spWeek = H.speaking.filter((x) => x.d >= addD(k, -6)).reduce((a, x) => a + num(x.min), 0);
   const MODES = ['Camera', 'Mirror', 'Voice note', 'Live audience'];
   return backHead('Habits', 'Reading · typing · speaking · ideas', 'today') +
+    (risk.length ? '<section class="card tight" style="background:var(--warn-bg);border-color:transparent"><div class="small xb" style="color:var(--warn-fg)">NEVER MISS TWICE</div><div class="sm" style="color:var(--warn-fg)">Missed <b>' + risk.map((x) => x[0]).join(', ') + '</b> yesterday — even a tiny session today keeps the chain.</div></section>' : '') +
     '<section class="grid3">' + tile('Reading', streak(didRead), best(didRead), 'doc') + tile('Typing', streak(didType), best(didType), 'study') + tile('Speaking', streak(didTalk), best(didTalk), 'tent') + '</section>' +
-    '<section class="card"><div class="head"><h2>Reading</h2><span class="sm muted">goal ' + S.pagesGoal + ' pages / day</span></div>' + reading + bookForm +
-    (fin.length ? '<div><div class="small muted b" style="margin-bottom:6px">Finished · ' + fin.length + ' this year</div><div class="chips">' + fin.map((f) => '<span class="pill" style="background:var(--doc-bg);color:var(--doc-fg);padding:5px 10px">' + esc(f.title) + '</span>').join('') + '</div></div>' : '') + '</section>' +
+    '<section class="card"><div class="head"><h2>Reading</h2><span class="sm muted">goal ' + S.pagesGoal + ' pages / day</span></div>' + reading + learn + bookForm +
+    (fin.length ? '<div><div class="small muted b" style="margin-bottom:6px">Finished · ' + fin.length + ' this year · tap to see your notes</div><div class="chips">' + fin.map((f) => '<button class="chip" data-a="bookView" data-i="' + H.finished.indexOf(f) + '" style="background:var(--doc-bg);color:var(--doc-fg);border-color:transparent">' + esc(f.title) + (f.rating ? ' · ' + f.rating + '★' : '') + '</button>').join('') + '</div></div>' : '') + '</section>' +
     '<section class="card"><div class="head"><h2>Typing</h2><span class="sm muted">target ' + S.wpmGoal + ' WPM</span></div><div class="grid3"><label class="f">Speed (WPM)<input id="tw" type="number" inputmode="numeric" class="in big" value="' + esc(tToday.wpm || '') + '"></label><label class="f">Accuracy %<input id="ta" type="number" inputmode="numeric" class="in big" value="' + esc(tToday.acc || '') + '"></label><label class="f">Minutes<input id="tm" type="number" inputmode="numeric" class="in big" value="' + esc(tToday.min || '') + '"></label></div><button class="btn full" data-a="typeSave">' + (tToday.wpm ? 'Update today\'s session' : 'Save today\'s session') + '</button>' +
     '<div><div class="row between small muted b" style="margin-bottom:6px"><span>Speed · last ' + th.length + ' sessions</span><span>' + (H.typing.length ? 'best ' + Math.max(...H.typing.map((x) => num(x.wpm))) + ' WPM' : '') + '</span></div>' + tline + '</div></section>' +
     '<section class="card"><div class="head"><h2>Public speaking</h2><span class="sm muted">' + spWeek + ' min this week</span></div><div style="display:grid;grid-template-columns:1fr 88px;gap:8px"><label class="f">Topic<input id="spt" class="in" placeholder="e.g. Why habits beat motivation"></label><label class="f">Minutes<input id="spm" type="number" inputmode="numeric" class="in big" value="5"></label></div>' +
@@ -637,7 +690,28 @@ const A = {
   // habits
   pages: (d) => { const k = nowInfo().k; const H = db.habits; H.pages = H.pages || {}; const cur = H.pages[k] || 0; const nv = Math.max(0, cur + +d.n); if (nv === cur) return; H.pages[k] = nv; if (H.book) H.book.page = clamp(H.book.page + (nv - cur), 0, H.book.total || 99999); day(k).h.read = nv >= db.settings.pagesGoal; commit(); },
   bookSave: () => { const t = val('bt'); if (!t) return toast('Enter the book name'); const H = db.habits; const tot = Math.max(1, num(val('bn'), 250)); H.book = Object.assign(H.book || { page: 0, start: dkey() }, { title: t, author: val('ba'), total: tot }); if (document.getElementById('bp')) H.book.page = clamp(num(val('bp')), 0, tot); commit('Book saved'); },
-  bookFinish: () => { const H = db.habits; if (!H.book) return; H.finished.unshift({ title: H.book.title, author: H.book.author, d: dkey(), start: H.book.start }); H.book = null; commit('Finished! Add your next book'); },
+  bookFinish: () => { const bk = db.habits.book; if (!bk) return; openSheet(finishSheet(bk)); },
+  bookFinishSave: () => {
+    const H = db.habits; const bk = H.book; if (!bk) return closeSheet();
+    const act = val('fact');
+    H.finished.unshift({ title: bk.title, author: bk.author, total: bk.total, d: dkey(), start: bk.start, notes: bk.notes || [], rating: +chipVal('frate') || 0, big: val('fbig'), action: act });
+    if (act) db.tasks.unshift({ id: uid(), t: 'From "' + bk.title + '": ' + act, proj: 'personal', st: 'todo', due: '', est: '', top: '', created: Date.now() });
+    H.book = null; closeSheet(); commit('Book finished · notes saved' + (act ? ' · action added to Tasks' : ''));
+  },
+  bookNote: () => { const bk = db.habits.book; const t = val('bkn'); if (!bk || !t) return toast('Write your takeaway first'); bk.notes = bk.notes || []; bk.notes.push({ t, p: num(val('bknp')) || '', d: nowInfo().k }); commit('Takeaway saved'); },
+  bookNoteDel: (d) => { const bk = db.habits.book; if (!bk || !confirm('Delete this note?')) return; bk.notes.splice(+d.i, 1); commit(); },
+  noteIdea: (d) => { const bk = db.habits.book; const n = bk && bk.notes[+d.i]; if (!n) return; db.ideas.unshift({ id: uid(), t: n.t, d: nowInfo().k, src: 'Book: ' + bk.title }); commit('Sent to Inbox ideas'); },
+  bookView: (d) => openSheet(bookSheet(db.habits.finished[+d.i], +d.i)),
+  bookIdea: (d) => { const f = db.habits.finished[+d.i]; if (!f) return; const t = 'Reel/post from "' + f.title + '": ' + (f.big || ((f.notes || [])[0] || {}).t || ''); db.ideas.unshift({ id: uid(), t, d: nowInfo().k, src: 'Book: ' + f.title }); closeSheet(); commit('Idea added to Inbox'); },
+  planDone: () => {
+    const k = nowInfo().k; const pick = chipVal('mit'); const txt = val('mitText');
+    if (!pick && !txt) return toast('Pick or type your one thing');
+    const dd = day(k); dd.plan = { done: true, at: Date.now(), intent: val('intent'), mitTask: txt ? '' : pick, mit: txt || '', mitDone: false };
+    const t = !txt && db.tasks.find((x) => x.id === pick); if (t && t.top !== k && db.tasks.filter((x) => x.top === k).length < 3) t.top = k;
+    commit('Have a great day');
+  },
+  planEdit: () => { const dd = day(nowInfo().k); if (dd.plan) dd.plan.done = false; commit(); },
+  mitToggle: () => { const k = nowInfo().k; const pl = day(k).plan; if (!pl) return; const t = pl.mitTask && db.tasks.find((x) => x.id === pl.mitTask); let on; if (t) { if (t.st === 'done') { t.st = 'todo'; delete t.doneAt; } else { t.st = 'done'; t.doneAt = k; } on = t.st === 'done'; } else on = pl.mitDone = !pl.mitDone; commit(on ? 'The one thing is done. Today is a win.' : ''); },
   typeSave: () => { const w = num(val('tw')); if (!(w > 0)) return toast('Enter your WPM'); const k = nowInfo().k; const H = db.habits; let s = H.typing.find((x) => x.d === k); if (!s) { s = { d: k }; H.typing.push(s); H.typing.sort((a, b) => (a.d < b.d ? -1 : 1)); } Object.assign(s, { wpm: w, acc: num(val('ta')), min: num(val('tm')) }); day(k).h.type = true; commit('Typing saved · ' + w + ' WPM'); },
   spSave: () => { const k = nowInfo().k; const min = num(val('spm')); if (!(min > 0)) return toast('How many minutes?'); db.habits.speaking.unshift({ d: k, topic: val('spt') || 'Practice', min, mode: chipVal('spmode') || 'Camera', rate: +chipVal('sprt') || 3, note: val('spn') }); day(k).h.talk = true; commit('Session saved'); },
   spDel: (d) => { db.habits.speaking.splice(+d.i, 1); commit(); },
