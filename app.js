@@ -1,6 +1,6 @@
 'use strict';
 /* Daily Life — single-file app. Data lives on the phone (localStorage), works offline. */
-const VERSION = '1.5.0';
+const VERSION = '1.5.1';
 const KEY = 'dl:v1';
 const START = '2026-11-09'; // cycle 1, day 1
 
@@ -558,7 +558,9 @@ function vHealth() {
     '<div class="grid2"><label class="f">Amount<input id="exa" type="number" inputmode="decimal" class="in big" placeholder="reps / steps / km"></label><label class="f">Minutes<input id="exm" type="number" inputmode="numeric" class="in big"></label></div><label class="f">Name (for Other)<input id="exn" class="in" placeholder="optional"></label><button class="btn full" data-a="exAdd">Log exercise</button>' + (exHtml ? '<div>' + exHtml + '</div>' : '') + '</section>' +
     '<section class="card"><div class="head"><h2>Sleep &amp; energy</h2><span class="sm muted">' + (slept ? 'Slept ' + fmtDur(slept) + (slept < 360 ? ' · short' : ' · good') : '') + '</span></div><div class="grid2"><label class="f">Went to bed<input type="time" class="in big" value="' + esc(h.bed) + '" data-c="hField" data-f="bed"></label><label class="f">Woke up<input type="time" class="in big" value="' + esc(h.wake) + '" data-c="hField" data-f="wake"></label></div>' +
     '<div class="small muted b">Energy today</div><div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px">' + [1, 2, 3, 4, 5].map((n) => '<button class="chip' + (h.energy === n ? ' on' : '') + '" data-a="energy" data-n="' + n + '" style="height:44px" aria-pressed="' + (h.energy === n) + '">' + n + '</button>').join('') + '</div></section>' +
-    '<section class="card"><div class="head"><h2>Screen time</h2><span class="sm muted">limit ' + fmtDur(S.screenLimit) + '</span></div><div class="chips">' + [['< 2h', 90], ['2–3h', 150], ['3–4h', 210], ['4h +', 270]].map(([l, v]) => '<button class="chip' + (scv !== '' && Math.abs(scv - v) < 30 ? ' on' : '') + '" data-a="screenQuick" data-n="' + v + '">' + l + '</button>').join('') + '</div><div class="row"><label for="st" class="b sm grow">Exact minutes (from phone settings)</label><input id="st" type="number" inputmode="numeric" class="in" style="width:100px;text-align:center;font-weight:800" value="' + esc(h.screen) + '" data-c="hField" data-f="screen"></div>' +
+    '<section class="card"><div class="head"><h2>Screen time</h2><span class="sm muted">limit ' + fmtDur(S.screenLimit) + '</span></div><div class="small b muted">From your phone\'s Digital Wellbeing / Screen time</div><div class="row" style="gap:8px"><label class="f grow">Hours<input id="sth" type="number" inputmode="numeric" min="0" max="24" class="in big" style="text-align:center" placeholder="0" value="' + (scv === '' ? '' : Math.floor(scv / 60)) + '" data-c="screenHM"></label><label class="f grow">Minutes<input id="stm" type="number" inputmode="numeric" min="0" max="59" class="in big" style="text-align:center" placeholder="0" value="' + (scv === '' ? '' : scv % 60) + '" data-c="screenHM"></label>' + (scv !== '' ? '<button class="del" data-a="screenClear" aria-label="Clear screen time" style="align-self:flex-end;height:46px">' + ic('x', 18) + '</button>' : '') + '</div>' +
+    '<div class="chips">' + [1, 2, 3, 4, 5, 6, 7, 8, 10].map((v) => '<button class="chip' + (scv === v * 60 ? ' on' : '') + '" data-a="screenQuick" data-n="' + v * 60 + '">' + v + 'h</button>').join('') + '</div>' +
+    '<div class="row" style="gap:6px"><span class="small muted grow">Fine-tune</span>' + [-30, -15, 15, 30].map((v) => '<button class="chip" data-a="screenStep" data-n="' + v + '">' + (v > 0 ? '+' : '−') + Math.abs(v) + 'm</button>').join('') + '</div>' +
     (scv !== '' ? '<div class="sm b" style="color:' + (scv > S.screenLimit ? 'var(--bad)' : 'var(--good)') + '">' + (scv > S.screenLimit ? 'Over limit by ' + fmtDur(scv - S.screenLimit) : 'Under limit · ' + fmtDur(scv) + ' of ' + fmtDur(S.screenLimit)) + '</div>' : '') + sbars + '</section>';
 }
 
@@ -656,7 +658,7 @@ function vSettings() {
   return backHead('Settings', 'Daily Life v' + VERSION) +
     '<section class="card"><h2>Theme</h2><div class="seg">' + [['light', 'Light'], ['dark', 'Dark'], ['auto', 'Auto']].map(([v, l]) => '<button class="' + (S.theme === v ? 'on' : '') + '" data-a="theme" data-v="' + v + '">' + l + '</button>').join('') + '</div></section>' +
     '<section class="card"><h2>You</h2>' + fld('name', 'Name', S.name, 'text') + '</section>' +
-    '<section class="card"><h2>Goals</h2><div class="grid2">' + fld('pagesGoal', 'Pages per day', S.pagesGoal) + fld('wpmGoal', 'Typing target (WPM)', S.wpmGoal) + fld('screenLimit', 'Screen limit (min)', S.screenLimit) + fld('waterGoal', 'Water (glasses)', S.waterGoal) + fld('kcalGoal', 'Calories (kcal)', S.kcalGoal) + fld('proteinGoal', 'Protein (g)', S.proteinGoal) + fld('weightGoal', 'Goal weight (kg)', S.weightGoal) + '</div></section>' +
+    '<section class="card"><h2>Goals</h2><div class="grid2">' + fld('pagesGoal', 'Pages per day', S.pagesGoal) + fld('wpmGoal', 'Typing target (WPM)', S.wpmGoal) + fld('screenLimitH', 'Screen limit (hours)', +(S.screenLimit / 60).toFixed(2)) + fld('waterGoal', 'Water (glasses)', S.waterGoal) + fld('kcalGoal', 'Calories (kcal)', S.kcalGoal) + fld('proteinGoal', 'Protein (g)', S.proteinGoal) + fld('weightGoal', 'Goal weight (kg)', S.weightGoal) + '</div></section>' +
     '<section class="card"><h2>Money</h2><div class="grid2">' + fld('budget', 'Monthly budget', S.budget) + fld('currency', 'Currency symbol', S.currency, 'text') + '</div></section>' +
     '<section class="card"><div class="row between"><div class="grow"><h2>Reminder alerts</h2><div class="small muted">Pops up a notification when a reminder is due (while the app is open or recently used).</div></div><button class="switch' + (S.alerts ? ' on' : '') + '" data-a="alerts" role="switch" aria-checked="' + !!S.alerts + '" aria-label="Reminder alerts"></button></div></section>' +
     syncCard() +
@@ -781,6 +783,8 @@ const A = {
   water: (d) => { const h = hday(nowInfo().k); h.water = h.water === +d.n ? +d.n - 1 : +d.n; commit(); },
   energy: (d) => { const h = hday(nowInfo().k); h.energy = h.energy === +d.n ? 0 : +d.n; commit(); },
   screenQuick: (d) => { hday(nowInfo().k).screen = +d.n; commit(); },
+  screenStep: (d) => { const h = hday(nowInfo().k); h.screen = clamp(num(h.screen) + +d.n, 0, 1440); commit(); },
+  screenClear: () => { hday(nowInfo().k).screen = ''; commit('Cleared'); },
   foodAdd: () => { const n = val('fn'); if (!n) return toast('What did you eat?'); hday(nowInfo().k).food.push({ name: n, kcal: num(val('fk')), p: num(val('fp')) }); commit('Food added'); },
   foodDel: (d) => { hday(nowInfo().k).food.splice(+d.i, 1); commit(); },
   exAdd: () => { const type = chipVal('ext') || 'other'; const amt = val('exa'), min = val('exm'); if (!amt && !min) return toast('Enter an amount or minutes'); const t = EX.find((x) => x[0] === type); hday(nowInfo().k).ex.push({ type, amt: amt || min, min: min, name: type === 'other' ? val('exn') : '' }); commit(t[1] + ' logged'); },
@@ -855,12 +859,19 @@ const A = {
 };
 const CH = {
   dayText: (v, d) => { day(ui.tDate || nowInfo().k)[d.f] = v.trim(); save(); },
+  screenHM: () => {
+    const hv = val('sth'), mv = val('stm'); const h = hday(nowInfo().k);
+    if (hv === '' && mv === '') { h.screen = ''; save(); return setTimeout(softRender, 0); }
+    h.screen = clamp(Math.round(clamp(num(hv), 0, 24) * 60 + clamp(num(mv), 0, 59)), 0, 1440);
+    save(); setTimeout(softRender, 0); // don't steal focus if you're moving from Hours to Minutes
+  },
   hField: (v, d) => { const h = hday(nowInfo().k); h[d.f] = d.f === 'screen' ? (v === '' ? '' : Math.max(0, Math.round(num(v)))) : d.f === 'w' ? (v === '' ? '' : num(v)) : v; commit(); },
   periodNext: (v, d) => { db.periods[d.p] = Object.assign(db.periods[d.p] || {}, { next: v.trim() }); save(); },
   setting: (v, d) => {
     const S = db.settings; const n = ['name', 'currency'].includes(d.f);
     if (n) S[d.f] = v.trim() || (d.f === 'name' ? 'Mo' : '$');
     else if (d.f === 'weightGoal') S[d.f] = v === '' ? '' : num(v);
+    else if (d.f === 'screenLimitH') { const x = num(v); if (x > 0) S.screenLimit = Math.round(clamp(x, 0.25, 24) * 60); }
     else { const x = num(v, S[d.f]); if (x > 0) S[d.f] = d.f === 'waterGoal' ? clamp(Math.round(x), 1, 16) : x; }
     commit('Saved');
   },
