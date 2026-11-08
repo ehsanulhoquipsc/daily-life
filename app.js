@@ -1,6 +1,6 @@
 'use strict';
 /* Daily Life — single-file app. Data lives on the phone (localStorage), works offline. */
-const VERSION = '1.3.0';
+const VERSION = '1.4.0';
 const KEY = 'dl:v1';
 const START = '2026-11-09'; // cycle 1, day 1
 
@@ -30,7 +30,7 @@ const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
 /* ---------- store ---------- */
 const DEF = () => ({
   v: 1,
-  settings: { theme: 'auto', name: 'Mo', currency: '$', budget: 1200, screenLimit: 180, waterGoal: 6, kcalGoal: 2200, proteinGoal: 120, weightGoal: '', wpmGoal: 60, pagesGoal: 5, alerts: false },
+  settings: { theme: 'auto', name: 'Mo', currency: '$', budget: 1200, screenLimit: 180, waterGoal: 6, kcalGoal: 2200, proteinGoal: 120, weightGoal: '', wpmGoal: 60, pagesGoal: 5, alerts: false, countdown: true },
   tasks: [], ideas: [], reminders: [], tx: [],
   house: { items: [], people: 3, settled: [] },
   days: {}, health: {},
@@ -255,6 +255,7 @@ function vHome() {
   const rem = db.reminders.filter((r) => !r.done).sort((a, b) => (a.when || '9') < (b.when || '9') ? -1 : 1)[0];
   return '<header class="row between" style="align-items:flex-start"><div><div class="sm muted">' + DOWL[new Date().getDay()] + ', ' + new Date().getDate() + ' ' + MONL[new Date().getMonth()] + '</div><h1>' + greet + ', ' + esc(db.settings.name) + '</h1>' + syncPill() + '</div>' +
     '<div class="row" style="gap:8px"><a href="#settings" class="iconbtn" aria-label="Settings">' + ic('gear', 20) + '</a><a href="#inbox" class="iconbtn" aria-label="Inbox' + (dueRem ? ', ' + dueRem + ' due' : '') + '">' + ic('bell', 20) + (dueRem ? '<i class="dotbadge"></i>' : '') + '</a></div></header>' +
+    (function () { const Y = yearInfo(); return '<button class="tap row" data-a="countdown" style="background:var(--warn-bg);color:var(--warn-fg);border-radius:14px;padding:0 14px;min-height:44px;gap:10px" aria-label="' + Y.left + ' days left in ' + Y.y + '"><span class="xb" style="font-size:18px">' + Y.left + '</span><span class="sm b grow">days left in ' + Y.y + '</span><span class="bar" style="width:70px;background:rgba(0,0,0,.08)"><i style="width:' + Y.pct + '%;background:var(--warn)"></i></span><span class="small b">' + Y.pct + '%</span></button>'; })() +
     '<a href="#today" class="hero"><svg width="88" height="88" viewBox="0 0 88 88" role="img" aria-label="Today ' + sc.pct + ' percent"><circle cx="44" cy="44" r="' + R + '" fill="none" stroke="rgba(255,255,255,.14)" stroke-width="9"/><circle cx="44" cy="44" r="' + R + '" fill="none" stroke="#6FCF97" stroke-width="9" stroke-linecap="round" stroke-dasharray="' + (C * sc.pct / 100).toFixed(1) + ' ' + C.toFixed(1) + '" transform="rotate(-90 44 44)"/><text x="44" y="46" text-anchor="middle" fill="currentColor" font-size="20" font-weight="800">' + sc.pct + '%</text><text x="44" y="62" text-anchor="middle" fill="currentColor" opacity=".6" font-size="10">today</text></svg>' +
     '<div class="grow"><div class="sm" style="color:var(--heroMuted)">' + cyc + '</div><div class="bar" style="background:rgba(255,255,255,.14);margin:8px 0 12px"><i style="width:' + cycPct + '%;background:#fff"></i></div><div class="row between"><div class="stat"><b>' + sc.pOn + '/5</b><span>Prayers</span></div><div class="stat"><b>' + sc.hs.done + '/' + sc.hs.total + '</b><span>Habits</span></div><div class="stat"><b>' + sc.td + '/' + (sc.tt || 3) + '</b><span>Top 3</span></div><div class="stat"><b>' + sc.bd + '/' + sc.bt + '</b><span>Blocks</span></div></div></div></a>' +
     morningCard(k) + comebackCard() +
@@ -295,6 +296,30 @@ function comebackCard() {
   const r = HABIT_TESTS().filter(([, t]) => atRisk(t));
   if (!r.length) return '';
   return '<section class="card tight" style="background:var(--warn-bg);border-color:transparent"><div class="small xb" style="color:var(--warn-fg)">NEVER MISS TWICE</div><div class="sm" style="color:var(--warn-fg)">You missed <b>' + r.map((x) => esc(x[0])).join(', ') + '</b> yesterday. Missing once is normal — do it today and your chain stays alive.</div><div class="chips">' + r.map(([n, t, to]) => '<a href="#' + to + '" class="chip" style="display:inline-flex;align-items:center;background:var(--card)">' + esc(n) + ' · ' + streak(t) + '-day chain ›</a>').join('') + '</div></section>';
+}
+function yearInfo() {
+  const now = new Date(); const y = now.getFullYear(); const today = dkey(now);
+  const end = y + '-12-31', start = y + '-01-01';
+  const left = diffD(today, end); // days after today
+  const total = diffD(start, end) + 1; const passed = diffD(start, today) + 1;
+  let fridays = 0, weekends = 0; for (let k = addD(today, 1); k <= end; k = addD(k, 1)) { const d = parseD(k).getDay(); if (d === 5) fridays++; if (d === 6) weekends++; }
+  return { y, left, total, passed, pct: Math.round((passed / total) * 100), weeks: Math.floor(left / 7), fridays, weekends };
+}
+const YEAR_LINES = ['Small steps every day still add up before the year ends.', 'You don\'t need a new year to start. You have today.', 'Pick one thing you\'ll be proud of on 31 December — and work on it today.', 'Every day you show up counts. Make today one of them.', 'The year isn\'t over. Finish strong.', 'Consistency beats intensity. Just don\'t miss twice.'];
+function countdownSheet() {
+  const Y = yearInfo(); const line = YEAR_LINES[parseD(dkey()).getDate() % YEAR_LINES.length];
+  const R = 70, C = 2 * Math.PI * R;
+  const big = Y.left === 0 ? 'Last day' : Y.left;
+  return '<div style="text-align:center;display:flex;flex-direction:column;gap:10px;align-items:center">' +
+    '<div class="small xb muted" style="letter-spacing:1px">' + Y.y + ' COUNTDOWN</div>' +
+    '<svg width="170" height="170" viewBox="0 0 170 170" role="img" aria-label="' + Y.left + ' days left in ' + Y.y + '"><circle cx="85" cy="85" r="' + R + '" fill="none" stroke="var(--soft)" stroke-width="12"/><circle cx="85" cy="85" r="' + R + '" fill="none" stroke="var(--warn)" stroke-width="12" stroke-linecap="round" stroke-dasharray="' + (C * Y.pct / 100).toFixed(1) + ' ' + C.toFixed(1) + '" transform="rotate(-90 85 85)"/>' +
+    '<text x="85" y="' + (Y.left === 0 ? 92 : 88) + '" text-anchor="middle" fill="currentColor" font-size="' + (Y.left === 0 ? 26 : 46) + '" font-weight="800">' + big + '</text>' + (Y.left ? '<text x="85" y="114" text-anchor="middle" fill="var(--muted)" font-size="13" font-weight="600">day' + (Y.left === 1 ? '' : 's') + ' left</text>' : '') + '</svg>' +
+    '<h2 style="font-size:20px">' + (Y.left ? Y.left + ' day' + (Y.left === 1 ? '' : 's') + ' left in ' + Y.y : 'Last day of ' + Y.y + ' — finish strong') + '</h2>' +
+    '<div class="sm muted">' + Y.pct + '% of the year is done' + (Y.left ? ' · about ' + Y.weeks + ' week' + (Y.weeks === 1 ? '' : 's') + ', ' + Y.weekends + ' weekend' + (Y.weekends === 1 ? '' : 's') + ' and ' + Y.fridays + ' Friday' + (Y.fridays === 1 ? '' : 's') + ' to go' : '') + '</div>' +
+    '<div class="bar" style="width:100%;height:8px"><i style="width:' + Y.pct + '%;background:var(--warn)"></i></div>' +
+    '<div class="sm" style="font-style:italic;line-height:1.45">\u201C' + line + '\u201D</div></div>' +
+    '<button class="btn full" data-a="sheetClose">Let\'s make today count</button>' +
+    '<button class="link" data-a="countdownOff" style="align-self:center;color:var(--muted)">Don\'t pop up every day</button>';
 }
 function weekKeys(k) { const d = parseD(k).getDay(); const mon = addD(k, -((d + 6) % 7)); return [0, 1, 2, 3, 4, 5, 6].map((i) => addD(mon, i)); }
 function elapsed() { const t = db.timer; if (!t) return '00:00:00'; const s = Math.floor((Date.now() - t.start) / 1000); return pad(Math.floor(s / 3600)) + ':' + pad(Math.floor(s / 60) % 60) + ':' + pad(s % 60); }
@@ -621,6 +646,7 @@ function vSettings() {
     '<section class="card"><h2>Money</h2><div class="grid2">' + fld('budget', 'Monthly budget', S.budget) + fld('currency', 'Currency symbol', S.currency, 'text') + '</div></section>' +
     '<section class="card"><div class="row between"><div class="grow"><h2>Reminder alerts</h2><div class="small muted">Pops up a notification when a reminder is due (while the app is open or recently used).</div></div><button class="switch' + (S.alerts ? ' on' : '') + '" data-a="alerts" role="switch" aria-checked="' + !!S.alerts + '" aria-label="Reminder alerts"></button></div></section>' +
     syncCard() +
+    '<section class="card"><div class="row between"><div class="grow"><h2>Year countdown popup</h2><div class="small muted">Shows how many days are left in the year, once a day when you open the app.</div></div><button class="switch' + (S.countdown ? ' on' : '') + '" data-a="countdownToggle" role="switch" aria-checked="' + !!S.countdown + '" aria-label="Year countdown popup"></button></div></section>' +
     '<section class="card"><h2>Your data</h2><div class="sm muted">Everything is saved on this phone and works offline (' + (size / 1024).toFixed(1) + ' KB). ' + (db.meta.lastBackup ? 'Last backup ' + nice(dkey(new Date(db.meta.lastBackup))) + '.' : 'No backup yet — export one now and then.') + '</div>' +
     '<div class="sync' + (navigator.onLine ? '' : ' off') + '" style="align-self:flex-start"><i></i>' + (navigator.onLine ? 'Online' : 'Offline') + '</div>' +
     '<button class="btn full" data-a="export">Export backup (.json)</button><label class="btn ghost full" style="cursor:pointer">Import backup<input type="file" accept="application/json,.json" data-c="import" class="sr"></label>' +
@@ -728,6 +754,9 @@ const A = {
   foodDel: (d) => { hday(nowInfo().k).food.splice(+d.i, 1); commit(); },
   exAdd: () => { const type = chipVal('ext') || 'other'; const amt = val('exa'), min = val('exm'); if (!amt && !min) return toast('Enter an amount or minutes'); const t = EX.find((x) => x[0] === type); hday(nowInfo().k).ex.push({ type, amt: amt || min, min: min, name: type === 'other' ? val('exn') : '' }); commit(t[1] + ' logged'); },
   exDel: (d) => { hday(nowInfo().k).ex.splice(+d.i, 1); commit(); },
+  countdown: () => openSheet(countdownSheet()),
+  countdownToggle: () => { db.settings.countdown = !db.settings.countdown; commit(db.settings.countdown ? 'Countdown popup on' : 'Countdown popup off'); },
+  countdownOff: () => { db.settings.countdown = false; save(); closeSheet(); toast('Daily popup off — turn it back on in Settings'); },
   // habits
   toggleChip: (d, el) => { el.classList.toggle('on'); el.setAttribute('aria-pressed', el.classList.contains('on')); },
   daysPreset: (d) => { const set = { all: [0, 1, 2, 3, 4, 5, 6], wk: [1, 2, 3, 4, 5], we: [0, 6] }[d.v]; document.querySelectorAll('#nhd .chip').forEach((c) => { const on = set.includes(+c.dataset.v); c.classList.toggle('on', on); c.setAttribute('aria-pressed', on); }); },
@@ -847,6 +876,14 @@ function checkReminders() {
 
 /* boot */
 applyTheme(); render();
+function maybeCountdown() {
+  if (!db.settings.countdown) return;
+  const k = dkey(); if (localStorage.getItem('dl:countdown') === k) return;
+  localStorage.setItem('dl:countdown', k);
+  setTimeout(() => { if ($('#sheet').hidden) openSheet(countdownSheet()); }, 500);
+}
+maybeCountdown();
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') maybeCountdown(); });
 function loadSync() {
   if (location.protocol === 'file:' || window.DLSync) return;
   SYNC.failed = false; softRender();
