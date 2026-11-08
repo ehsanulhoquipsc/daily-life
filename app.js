@@ -1,6 +1,6 @@
 'use strict';
 /* Daily Life — single-file app. Data lives on the phone (localStorage), works offline. */
-const VERSION = '1.4.0';
+const VERSION = '1.5.0';
 const KEY = 'dl:v1';
 const START = '2026-11-09'; // cycle 1, day 1
 
@@ -31,7 +31,7 @@ const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
 const DEF = () => ({
   v: 1,
   settings: { theme: 'auto', name: 'Mo', currency: '$', budget: 1200, screenLimit: 180, waterGoal: 6, kcalGoal: 2200, proteinGoal: 120, weightGoal: '', wpmGoal: 60, pagesGoal: 5, alerts: false, countdown: true },
-  tasks: [], ideas: [], reminders: [], tx: [],
+  tasks: [], ideas: [], reminders: [], tx: [], shop: { items: [], recent: [] },
   house: { items: [], people: 3, settled: [] },
   days: {}, health: {},
   habits: { book: null, finished: [], typing: [], speaking: [], notes: [] },
@@ -44,6 +44,7 @@ function normalize(raw) {
     raw.settings = Object.assign(d.settings, raw.settings);
     raw.habits = Object.assign(d.habits, raw.habits);
     raw.house = Object.assign(d.house, raw.house);
+    raw.shop = Object.assign(d.shop, raw.shop);
     raw.meta = Object.assign(d.meta, raw.meta);
     return raw;
 }
@@ -400,11 +401,24 @@ function vTasks() {
     }).join('') + '</div></section>';
   }).join('');
   return '<header class="row between"><div><h1>Tasks</h1><div class="sm muted">' + db.tasks.filter((t) => t.st !== 'done').length + ' open · ' + db.tasks.filter((t) => t.st === 'done').length + ' done</div></div></header>' +
+    shopCard() +
     '<div class="seg" role="tablist">' + [['today', 'Today'], ['week', 'This week'], ['all', 'All']].map(([v, l]) => '<button class="' + (ui.taskRange === v ? 'on' : '') + '" data-a="taskRange" data-v="' + v + '" role="tab" aria-selected="' + (ui.taskRange === v) + '">' + l + '</button>').join('') + '</div>' +
     '<div class="scroll-x">' + [['all', 'All']].concat(PROJ).map(([v, l]) => '<button class="chip' + (ui.taskProj === v ? ' on' : '') + '" data-a="taskProj" data-v="' + v + '">' + l + '</button>').join('') + '</div>' +
     (groups || '<section class="card">' + empty(ui.taskRange === 'all' ? 'No tasks yet. Tap + to add your first one.' : 'Nothing here. Switch to <b>All</b> or tap + to add a task.') + '</section>') +
     '<button class="fab" data-a="taskNew" aria-label="Add task">' + ic('plus', 26, 2.4) + '</button>';
 }
+function shopCard() {
+  const S = db.shop; const items = S.items.slice().sort((a, b) => a.done - b.done);
+  const left = S.items.filter((x) => !x.done).length, got = S.items.length - left;
+  const have = new Set(S.items.map((x) => x.t.toLowerCase()));
+  const again = (S.recent || []).filter((t) => !have.has(t.toLowerCase())).slice(0, 8);
+  return '<section class="card tight" style="border:2px solid var(--pray)"><div class="head"><h2 style="color:var(--pray-fg)">Shopping list</h2><span class="sm muted">' + (S.items.length ? left + ' to buy' + (got ? ' · ' + got + ' in basket' : '') : 'empty') + '</span></div>' +
+    '<div class="row"><label class="sr" for="shopIn">Add item</label><input id="shopIn" class="in grow" placeholder="Add items — e.g. milk, eggs, 2 bread" enterkeyhint="done" data-enter="shopAdd"><button class="iconbtn" data-a="shopAdd" aria-label="Add to list" style="background:var(--pray);color:#fff;border:0">' + ic('plus', 20, 2.4) + '</button></div>' +
+    (items.length ? '<div>' + items.map((x) => '<div class="list-row" style="min-height:48px"><button class="tap row grow" data-a="shopToggle" data-id="' + x.id + '" aria-pressed="' + !!x.done + '" style="min-height:48px"><span class="box' + (x.done ? ' on' : '') + '" style="' + (x.done ? 'background:var(--pray);border-color:var(--pray)' : '') + '">' + (x.done ? ic('check', 14, 3, 'style="color:#fff"') : '') + '</span><span class="grow" style="font-size:15px;' + (x.done ? 'text-decoration:line-through;color:var(--muted)' : '') + '">' + esc(x.t) + '</span></button><button class="del" data-a="shopDel" data-id="' + x.id + '" aria-label="Remove ' + esc(x.t) + '">' + ic('x', 16) + '</button></div>').join('') + '</div>' : empty('Nothing to buy. Add things as you think of them.')) +
+    (again.length ? '<div><div class="small b muted" style="margin-bottom:6px">Buy again</div><div class="chips">' + again.map((t) => '<button class="chip" data-a="shopAgain" data-t="' + esc(t) + '">+ ' + esc(t) + '</button>').join('') + '</div></div>' : '') +
+    (S.items.length ? '<div class="grid3">' + (got ? '<button class="btn ghost sm" data-a="shopClearGot" style="padding:0 6px;white-space:nowrap">Clear ticked</button>' : '<span></span>') + '<button class="btn ghost sm" data-a="shopShare" style="padding:0 6px;white-space:nowrap">Share</button><button class="btn ghost sm" data-a="shopReset" style="color:var(--bad);padding:0 6px;white-space:nowrap">Reset list</button></div>' : '') + '</section>';
+}
+function shopRemember(names) { const S = db.shop; const set = new Set(); S.recent = names.concat(S.recent || []).filter((t) => { const k = t.toLowerCase(); if (set.has(k)) return false; set.add(k); return true; }).slice(0, 20); }
 function taskSheet(t) {
   t = t || { t: '', proj: 'personal', due: '', est: '', st: 'todo' };
   return '<h2>' + (t.id ? 'Edit task' : 'New task') + '</h2>' +
@@ -715,6 +729,23 @@ const A = {
   planAdd: () => { const t = val('pt'); if (!t) return; const k = ui.tDate || nowInfo().k; const tk = addD(k, 1); const full = db.tasks.filter((x) => x.top === tk).length >= 3; db.tasks.unshift({ id: uid(), t, proj: 'personal', st: 'todo', due: '', est: '', top: full ? '' : tk, created: Date.now() }); commit(full ? 'Added (Top 3 already full)' : 'Added to tomorrow\'s Top 3'); },
   finish: () => { const k = ui.tDate || nowInfo().k; const dd = day(k); dd.fin = !dd.fin; commit(dd.fin ? 'Day finished · ' + dayScore(k).pct + '% — rest well' : 'Day reopened'); },
   // tasks
+  shopAdd: () => {
+    const raw = val('shopIn'); if (!raw) return;
+    const have = new Set(db.shop.items.map((x) => x.t.toLowerCase()));
+    const add = raw.split(/[,\n]/).map((x) => x.trim()).filter((x) => x && !have.has(x.toLowerCase()));
+    add.forEach((t) => db.shop.items.push({ id: uid(), t, done: false }));
+    commit(add.length ? (add.length === 1 ? 'Added' : add.length + ' items added') : 'Already on the list');
+    setTimeout(() => { const i = document.getElementById('shopIn'); if (i) i.focus(); }, 30);
+  },
+  shopToggle: (d) => { const x = db.shop.items.find((i) => i.id === d.id); if (x) x.done = !x.done; commit(); },
+  shopDel: (d) => { db.shop.items = db.shop.items.filter((i) => i.id !== d.id); commit(); },
+  shopAgain: (d) => { db.shop.items.push({ id: uid(), t: d.t, done: false }); commit('Added ' + d.t); },
+  shopClearGot: () => { const got = db.shop.items.filter((i) => i.done); shopRemember(got.map((i) => i.t)); db.shop.items = db.shop.items.filter((i) => !i.done); commit('Cleared ' + got.length + ' item' + (got.length === 1 ? '' : 's')); },
+  shopReset: () => { if (!confirm('Reset the shopping list? All items will be removed.')) return; shopRemember(db.shop.items.map((i) => i.t)); db.shop.items = []; commit('List reset'); },
+  shopShare: async () => {
+    const txt = 'Shopping list:\n' + db.shop.items.filter((i) => !i.done).map((i) => '• ' + i.t).join('\n');
+    try { if (navigator.share) { await navigator.share({ text: txt }); return; } await navigator.clipboard.writeText(txt); toast('List copied'); } catch (e) { if (e && e.name !== 'AbortError') toast('Could not share'); }
+  },
   taskRange: (d) => { ui.taskRange = d.v; render(true); },
   taskProj: (d) => { ui.taskProj = d.v; render(true); },
   taskNew: () => openSheet(taskSheet()),
