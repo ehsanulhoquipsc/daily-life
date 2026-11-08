@@ -1,6 +1,6 @@
 'use strict';
 /* Daily Life — single-file app. Data lives on the phone (localStorage), works offline. */
-const VERSION = '1.2.0';
+const VERSION = '1.3.0';
 const KEY = 'dl:v1';
 const START = '2026-11-09'; // cycle 1, day 1
 
@@ -113,8 +113,14 @@ const habitDefs = (k) => {
   const d = parseD(k).getDay();
   const h = [['read', 'Read ' + db.settings.pagesGoal + ' pages'], ['type', 'Typing practice'], ['talk', 'Public speaking practice']];
   if (d === 1 || d === 4) h.push(['hyg', 'Personal hygiene']);
+  customHabits().filter((c) => c.days.includes(d) && (!c.start || c.start <= k)).forEach((c) => h.push(['c:' + c.id, c.name, c]));
   return h;
 };
+const customHabits = () => (db.habits.custom || []).filter((c) => !c.archived);
+const DAYS_ORDER = [1, 2, 3, 4, 5, 6, 0];
+const daysLabel = (days) => days.length === 7 ? 'Every day' : days.length === 5 && [1, 2, 3, 4, 5].every((x) => days.includes(x)) ? 'Weekdays' : days.length === 2 && days.includes(0) && days.includes(6) ? 'Weekends' : DAYS_ORDER.filter((x) => days.includes(x)).map((x) => DOW[x]).join(', ');
+// true = done, false = missed, null = not scheduled that day (doesn't count either way)
+const customTest = (c) => (k) => (!c.days.includes(parseD(k).getDay()) || (c.start && k < c.start)) ? null : !!peekDay(k).h['c:' + c.id];
 function habitStats(k) {
   const dd = peekDay(k); const defs = habitDefs(k);
   const done = defs.filter(([id]) => dd.h[id]).length + (dd.x || []).filter((x) => x.done).length;
@@ -131,19 +137,23 @@ function dayScore(k) {
 }
 // "Never miss twice": one missed day doesn't break a chain; two in a row does.
 function streak(test) {
-  const t = nowInfo().k; let k = test(t) ? t : addD(t, -1); let n = 0, gap = 0;
-  for (let i = 0; i < 800; i++) { if (test(k)) { n++; gap = 0; } else if (++gap >= 2) break; k = addD(k, -1); }
+  const t = nowInfo().k; let k = test(t) === true ? t : addD(t, -1); let n = 0, gap = 0;
+  for (let i = 0; i < 800; i++) { const r = test(k); if (r === true) { n++; gap = 0; } else if (r !== null && ++gap >= 2) break; k = addD(k, -1); }
   return n;
 }
 function best(test) {
   const keys = Object.keys(db.days).concat(Object.keys(db.health)).sort(); if (!keys.length) return 0;
   let k = keys[0], b = 0, c = 0, gap = 0; const end = nowInfo().k;
-  for (let i = 0; i < 800 && k <= end; i++) { if (test(k)) { c++; gap = 0; b = Math.max(b, c); } else if (++gap >= 2) c = 0; k = addD(k, 1); }
+  for (let i = 0; i < 800 && k <= end; i++) { const r = test(k); if (r === true) { c++; gap = 0; b = Math.max(b, c); } else if (r !== null && ++gap >= 2) c = 0; k = addD(k, 1); }
   return b;
 }
 // missed yesterday, not yet done today, chain still alive -> nudge
-function atRisk(test) { const t = nowInfo().k, y = addD(t, -1); return !test(t) && !test(y) && streak(test) > 0; }
-const HABIT_TESTS = () => [['Reading', (k) => !!peekDay(k).h.read, 'habits'], ['Typing', (k) => !!peekDay(k).h.type, 'habits'], ['Speaking', (k) => !!peekDay(k).h.talk, 'habits'], ['All 5 prayers', (k) => PRAYERS(k).every(([id]) => peekDay(k).p[id]), 'today']];
+function atRisk(test) {
+  const t = nowInfo().k; if (test(t) !== false) return false; // done today, or not scheduled today
+  let y = addD(t, -1); for (let i = 0; i < 7 && test(y) === null; i++) y = addD(y, -1); // last scheduled day
+  return test(y) === false && streak(test) > 0;
+}
+const HABIT_TESTS = () => [['Reading', (k) => !!peekDay(k).h.read, 'habits'], ['Typing', (k) => !!peekDay(k).h.type, 'habits'], ['Speaking', (k) => !!peekDay(k).h.talk, 'habits'], ['All 5 prayers', (k) => PRAYERS(k).every(([id]) => peekDay(k).p[id]), 'today']].concat(customHabits().map((c) => [c.name, customTest(c), 'habits']));
 const allPrayers = (k) => PRAYERS(k).every(([id]) => peekDay(k).p[id]);
 const didRead = (k) => !!peekDay(k).h.read;
 const didType = (k) => !!peekDay(k).h.type;
@@ -323,7 +333,8 @@ function vToday() {
     if (id === 'type') { const s = db.habits.typing.find((x) => x.d === k); sub = s ? s.wpm + ' WPM · ' + s.acc + '% · ' + s.min + ' min' : 'Aim 15 min · log speed in Habits'; }
     if (id === 'talk') { const s = db.habits.speaking.filter((x) => x.d === k); sub = s.length ? s.reduce((a, x) => a + num(x.min), 0) + ' min · ' + esc(s[0].topic) : 'Camera, mirror or voice note'; }
     if (id === 'hyg') sub = 'Mon & Thu';
-    return '<div class="list-row"><button class="tap row grow" data-a="habit" data-id="' + id + '" aria-pressed="' + on + '" style="min-height:52px"><span class="box' + (on ? ' on' : '') + '">' + (on ? ic('check', 14, 3, 'style="color:var(--btnInk)"') : '') + '</span><span class="grow"><span class="b" style="display:block;font-size:15px">' + l + '</span><span class="small muted">' + sub + '</span></span></button>' + (id !== 'hyg' ? '<a href="#habits" class="link" style="white-space:nowrap">Log ›</a>' : '') + '</div>';
+    if (id.startsWith('c:')) { const c = habitDefs(k).find((x) => x[0] === id)[2]; sub = (c.target ? esc(c.target) + ' · ' : '') + daysLabel(c.days); }
+    return '<div class="list-row"><button class="tap row grow" data-a="habit" data-id="' + id + '" aria-pressed="' + on + '" style="min-height:52px"><span class="box' + (on ? ' on' : '') + '">' + (on ? ic('check', 14, 3, 'style="color:var(--btnInk)"') : '') + '</span><span class="grow"><span class="b" style="display:block;font-size:15px">' + l + '</span><span class="small muted">' + sub + '</span></span></button>' + (['read', 'type', 'talk'].includes(id) ? '<a href="#habits" class="link" style="white-space:nowrap">Log ›</a>' : '') + '</div>';
   }).join('') + (dd.x || []).map((x, j) => '<div class="list-row"><button class="tap row grow" data-a="xHabit" data-j="' + j + '" aria-pressed="' + !!x.done + '" style="min-height:52px"><span class="box' + (x.done ? ' on' : '') + '">' + (x.done ? ic('check', 14, 3, 'style="color:var(--btnInk)"') : '') + '</span><span class="b grow" style="font-size:15px">' + esc(x.t) + '</span></button><button class="del" data-a="xDel" data-j="' + j + '" aria-label="Remove ' + esc(x.t) + '">' + ic('x', 16) + '</button></div>').join('');
   const hh = peekH(k);
   const slept = sleepMin(hh);
@@ -381,6 +392,35 @@ function taskSheet(t) {
     '<button class="btn ghost full" data-a="sheetClose">Cancel</button>';
 }
 
+function myHabits(k) {
+  const list = customHabits(); const arch = (db.habits.custom || []).filter((c) => c.archived);
+  const last7 = [...Array(7)].map((_, i) => addD(k, i - 6));
+  const rows = list.map((c) => {
+    const t = customTest(c); const today = t(k); const st = streak(t), bs = best(t);
+    const dots = last7.map((x) => { const r = t(x); return '<i title="' + nice(x) + '" style="display:block;width:10px;height:10px;border-radius:5px;' + (r === true ? 'background:var(--good)' : r === false ? (x === k ? 'border:2px solid var(--line2)' : 'background:var(--line2)') : 'border:1px dashed var(--line2)') + '"></i>'; }).join('');
+    return '<div class="list-row" style="align-items:center;padding:6px 0">' +
+      (today === null ? '<span class="box" style="opacity:.35" title="Not today"></span>' : '<button class="tap" data-a="habit" data-id="c:' + c.id + '" aria-pressed="' + today + '" aria-label="' + esc(c.name) + (today ? ' done' : ' not done') + ' today" style="width:auto;min-height:44px;display:flex;align-items:center"><span class="box' + (today ? ' on' : '') + '">' + (today ? ic('check', 14, 3, 'style="color:var(--btnInk)"') : '') + '</span></button>') +
+      '<button class="tap grow" data-a="habitEdit" data-id="' + c.id + '" style="min-height:52px;display:flex;flex-direction:column;justify-content:center;gap:3px"><span class="b" style="font-size:15px">' + esc(c.name) + '</span><span class="small muted">' + (c.target ? esc(c.target) + ' · ' : '') + daysLabel(c.days) + (today === null ? ' · rest day' : '') + '</span><span class="row" style="gap:4px">' + dots + '</span></button>' +
+      '<div style="text-align:right;flex:0 0 auto"><div class="row b" style="gap:3px;justify-content:flex-end;color:var(--warn-fg)">' + ic('flame', 14, 2.4) + st + '</div><div class="small muted">best ' + bs + '</div></div></div>';
+  }).join('');
+  const dayChips = DAYS_ORDER.map((x) => '<button class="chip on" data-a="toggleChip" data-v="' + x + '" style="padding:0;height:40px" aria-pressed="true">' + DOW[x].slice(0, 2) + '</button>').join('');
+  return '<section class="card"><div class="head"><h2>My habits</h2><span class="sm muted">' + list.length + ' active</span></div>' +
+    (rows ? '<div>' + rows + '</div><div class="small muted">Dots = last 7 days · tap a habit to edit</div>' : empty('Add any habit you want to build — it shows up on Today and gets its own streak.')) +
+    '<details' + (list.length ? '' : ' open') + ' style="border-top:1px solid var(--line);padding-top:6px"><summary>' + ic('plus', 16, 2.4) + '&nbsp;Add a habit</summary><div class="col" style="margin-top:6px">' +
+    '<label class="f">Habit<input id="nh" class="in" placeholder="e.g. Quran 1 page, Stretch, Journal"></label>' +
+    '<label class="f">Goal (optional)<input id="nht" class="in" placeholder="e.g. 10 min, 2 pages, 20 reps"></label>' +
+    '<div class="small muted b">Repeat on</div><div id="nhd" style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px">' + dayChips + '</div>' +
+    '<div class="chips"><button class="chip" data-a="daysPreset" data-v="all">Every day</button><button class="chip" data-a="daysPreset" data-v="wk">Weekdays</button><button class="chip" data-a="daysPreset" data-v="we">Weekends</button></div>' +
+    '<button class="btn full" data-a="habitAdd">Add habit</button></div></details>' +
+    (arch.length ? '<details style="border-top:1px solid var(--line);padding-top:6px"><summary class="muted">Paused habits (' + arch.length + ')</summary>' + arch.map((c) => '<div class="list-row"><span class="grow sm">' + esc(c.name) + '</span><button class="link" data-a="habitResume" data-id="' + c.id + '">Resume</button></div>').join('') + '</details>' : '') + '</section>';
+}
+function habitSheet(c) {
+  return '<h2>Edit habit</h2><label class="f">Habit<input id="eh" class="in" value="' + esc(c.name) + '"></label><label class="f">Goal (optional)<input id="eht" class="in" value="' + esc(c.target || '') + '"></label>' +
+    '<div class="small muted b">Repeat on</div><div id="ehd" style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px">' + DAYS_ORDER.map((x) => '<button class="chip' + (c.days.includes(x) ? ' on' : '') + '" data-a="toggleChip" data-v="' + x + '" style="padding:0;height:40px" aria-pressed="' + c.days.includes(x) + '">' + DOW[x].slice(0, 2) + '</button>').join('') + '</div>' +
+    '<button class="btn full" data-a="habitSave" data-id="' + c.id + '">Save</button>' +
+    '<button class="btn ghost full" data-a="habitPause" data-id="' + c.id + '">Pause habit (keeps history)</button>' +
+    '<button class="btn ghost full" data-a="habitDel" data-id="' + c.id + '" style="color:var(--bad)">Delete habit</button><button class="btn ghost full" data-a="sheetClose">Cancel</button>';
+}
 function finishSheet(bk) {
   return '<h2>Finished \u201C' + esc(bk.title) + '\u201D</h2><div class="sm muted">' + (bk.notes || []).length + ' takeaways saved. Two quick questions so the book sticks.</div>' +
     '<div class="small b muted">Rating</div><div class="chips" id="frate" style="display:grid;grid-template-columns:repeat(5,1fr)">' + [1, 2, 3, 4, 5].map((n) => '<button class="chip' + (n === 4 ? ' on' : '') + '" data-a="pickChip" data-group="frate" data-v="' + n + '" style="height:44px">' + n + '★</button>').join('') + '</div>' +
@@ -487,7 +527,7 @@ function vHealth() {
 function vHabits() {
   const k = nowInfo().k; const H = db.habits; const S = db.settings; const bk = H.book;
   const tile = (n, v, b, c) => '<div class="kpi"><div class="row small b" style="gap:5px;color:var(--' + c + '-fg)">' + ic('flame', 13, 2.4) + n + '</div><b>' + v + '<span class="small muted" style="font-weight:600"> days</span></b><span class="small muted">best ' + b + '</span></div>';
-  const risk = HABIT_TESTS().slice(0, 3).filter(([, t]) => atRisk(t));
+  const risk = HABIT_TESTS().filter(([n]) => n !== 'All 5 prayers').filter(([, t]) => atRisk(t));
   const todayPages = (H.pages || {})[k] || 0;
   const reading = bk ? '<div class="row" style="gap:14px"><div style="width:58px;height:84px;flex:0 0 58px;border-radius:8px;background:var(--doc);color:#fff;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:800">' + esc((bk.title || '?').trim().charAt(0).toUpperCase()) + '</div><div class="grow"><div class="small muted b">NOW READING</div><div class="xb" style="font-size:17px;line-height:1.25">' + esc(bk.title) + '</div><div class="sm muted">' + esc(bk.author) + '</div><div class="bar" style="margin-top:8px"><i style="width:' + pct(bk.page, bk.total) + '%;background:var(--doc)"></i></div><div class="small muted" style="margin-top:4px">page ' + bk.page + ' of ' + bk.total + ' · ' + pct(bk.page, bk.total) + '%' + (bk.total > bk.page ? ' · ~' + Math.ceil((bk.total - bk.page) / Math.max(1, S.pagesGoal)) + ' days left' : '') + '</div></div></div>' +
     '<div class="row between" style="border-top:1px solid var(--line);padding-top:12px"><div><div class="b sm">Pages read today</div><div class="small b" style="color:' + (todayPages >= S.pagesGoal ? 'var(--good)' : 'var(--muted)') + '">' + (todayPages >= S.pagesGoal ? 'Goal done' : (S.pagesGoal - todayPages) + ' more to hit ' + S.pagesGoal) + '</div></div><div class="step"><button data-a="pages" data-n="-1" aria-label="One page less">−</button><output>' + todayPages + '</output><button class="p" data-a="pages" data-n="1" aria-label="One page more">+</button></div></div>'
@@ -509,6 +549,7 @@ function vHabits() {
   return backHead('Habits', 'Reading · typing · speaking · ideas', 'today') +
     (risk.length ? '<section class="card tight" style="background:var(--warn-bg);border-color:transparent"><div class="small xb" style="color:var(--warn-fg)">NEVER MISS TWICE</div><div class="sm" style="color:var(--warn-fg)">Missed <b>' + risk.map((x) => x[0]).join(', ') + '</b> yesterday — even a tiny session today keeps the chain.</div></section>' : '') +
     '<section class="grid3">' + tile('Reading', streak(didRead), best(didRead), 'doc') + tile('Typing', streak(didType), best(didType), 'study') + tile('Speaking', streak(didTalk), best(didTalk), 'tent') + '</section>' +
+    myHabits(k) +
     '<section class="card"><div class="head"><h2>Reading</h2><span class="sm muted">goal ' + S.pagesGoal + ' pages / day</span></div>' + reading + learn + bookForm +
     (fin.length ? '<div><div class="small muted b" style="margin-bottom:6px">Finished · ' + fin.length + ' this year · tap to see your notes</div><div class="chips">' + fin.map((f) => '<button class="chip" data-a="bookView" data-i="' + H.finished.indexOf(f) + '" style="background:var(--doc-bg);color:var(--doc-fg);border-color:transparent">' + esc(f.title) + (f.rating ? ' · ' + f.rating + '★' : '') + '</button>').join('') + '</div></div>' : '') + '</section>' +
     '<section class="card"><div class="head"><h2>Typing</h2><span class="sm muted">target ' + S.wpmGoal + ' WPM</span></div><div class="grid3"><label class="f">Speed (WPM)<input id="tw" type="number" inputmode="numeric" class="in big" value="' + esc(tToday.wpm || '') + '"></label><label class="f">Accuracy %<input id="ta" type="number" inputmode="numeric" class="in big" value="' + esc(tToday.acc || '') + '"></label><label class="f">Minutes<input id="tm" type="number" inputmode="numeric" class="in big" value="' + esc(tToday.min || '') + '"></label></div><button class="btn full" data-a="typeSave">' + (tToday.wpm ? 'Update today\'s session' : 'Save today\'s session') + '</button>' +
@@ -640,7 +681,7 @@ const A = {
   tWeek: (d) => { ui.tDate = addD(ui.tDate || nowInfo().k, +d.n); render(true); },
   block: (d) => { const k = ui.tDate || nowInfo().k; const dd = day(k); const O = ['', 'done', 'skip', 'moved']; dd.b[d.i] = O[(O.indexOf(dd.b[d.i] || '') + 1) % 4]; if (!dd.b[d.i]) delete dd.b[d.i]; commit(); },
   pray: (d) => { const k = ui.tDate || nowInfo().k; const dd = day(k); const v = dd.p[d.id] || ''; dd.p[d.id] = v === '' ? 'on' : v === 'on' ? 'late' : ''; if (!dd.p[d.id]) delete dd.p[d.id]; commit(); },
-  habit: (d) => { const k = ui.tDate || nowInfo().k; const dd = day(k); dd.h[d.id] = !dd.h[d.id]; commit(); },
+  habit: (d) => { const k = route === 'habits' ? nowInfo().k : ui.tDate || nowInfo().k; const dd = day(k); dd.h[d.id] = !dd.h[d.id]; commit(); },
   xHabit: (d) => { const dd = day(ui.tDate || nowInfo().k); dd.x[d.j].done = !dd.x[d.j].done; commit(); },
   xDel: (d) => { const dd = day(ui.tDate || nowInfo().k); dd.x.splice(+d.j, 1); commit(); },
   xAdd: () => { const t = val('xh'); if (!t) return; day(ui.tDate || nowInfo().k).x.push({ t, done: false }); commit('Habit added for this day'); },
@@ -688,6 +729,23 @@ const A = {
   exAdd: () => { const type = chipVal('ext') || 'other'; const amt = val('exa'), min = val('exm'); if (!amt && !min) return toast('Enter an amount or minutes'); const t = EX.find((x) => x[0] === type); hday(nowInfo().k).ex.push({ type, amt: amt || min, min: min, name: type === 'other' ? val('exn') : '' }); commit(t[1] + ' logged'); },
   exDel: (d) => { hday(nowInfo().k).ex.splice(+d.i, 1); commit(); },
   // habits
+  toggleChip: (d, el) => { el.classList.toggle('on'); el.setAttribute('aria-pressed', el.classList.contains('on')); },
+  daysPreset: (d) => { const set = { all: [0, 1, 2, 3, 4, 5, 6], wk: [1, 2, 3, 4, 5], we: [0, 6] }[d.v]; document.querySelectorAll('#nhd .chip').forEach((c) => { const on = set.includes(+c.dataset.v); c.classList.toggle('on', on); c.setAttribute('aria-pressed', on); }); },
+  habitAdd: () => {
+    const name = val('nh'); if (!name) return toast('Name your habit');
+    const days = [...document.querySelectorAll('#nhd .chip.on')].map((c) => +c.dataset.v); if (!days.length) return toast('Pick at least one day');
+    db.habits.custom = db.habits.custom || []; db.habits.custom.push({ id: uid(), name, target: val('nht'), days, start: nowInfo().k, created: Date.now() });
+    commit('Habit added — it\'s on Today now');
+  },
+  habitEdit: (d) => { const c = (db.habits.custom || []).find((x) => x.id === d.id); if (c) openSheet(habitSheet(c)); },
+  habitSave: (d) => {
+    const c = db.habits.custom.find((x) => x.id === d.id); const name = val('eh'); if (!name) return toast('Name your habit');
+    const days = [...document.querySelectorAll('#ehd .chip.on')].map((x) => +x.dataset.v); if (!days.length) return toast('Pick at least one day');
+    Object.assign(c, { name, target: val('eht'), days }); closeSheet(); commit('Saved');
+  },
+  habitPause: (d) => { const c = db.habits.custom.find((x) => x.id === d.id); c.archived = true; closeSheet(); commit('Paused — resume any time'); },
+  habitResume: (d) => { const c = db.habits.custom.find((x) => x.id === d.id); c.archived = false; commit('Resumed'); },
+  habitDel: (d) => { if (!confirm('Delete this habit? Its streak history will be hidden.')) return; db.habits.custom = db.habits.custom.filter((x) => x.id !== d.id); closeSheet(); commit('Deleted'); },
   pages: (d) => { const k = nowInfo().k; const H = db.habits; H.pages = H.pages || {}; const cur = H.pages[k] || 0; const nv = Math.max(0, cur + +d.n); if (nv === cur) return; H.pages[k] = nv; if (H.book) H.book.page = clamp(H.book.page + (nv - cur), 0, H.book.total || 99999); day(k).h.read = nv >= db.settings.pagesGoal; commit(); },
   bookSave: () => { const t = val('bt'); if (!t) return toast('Enter the book name'); const H = db.habits; const tot = Math.max(1, num(val('bn'), 250)); H.book = Object.assign(H.book || { page: 0, start: dkey() }, { title: t, author: val('ba'), total: tot }); if (document.getElementById('bp')) H.book.page = clamp(num(val('bp')), 0, tot); commit('Book saved'); },
   bookFinish: () => { const bk = db.habits.book; if (!bk) return; openSheet(finishSheet(bk)); },
