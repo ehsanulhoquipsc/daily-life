@@ -118,3 +118,4 @@ details>summary::-webkit-details-marker{display:none}
 .del{background:none;border:0;color:var(--muted);width:40px;height:40px;cursor:pointer;flex:0 0 40px;display:flex;align-items:center;justify-content:center}
 svg{flex-shrink:0}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+button.kpi{text-align:left;cursor:pointer;font:inherit;color:inherit;width:100%}

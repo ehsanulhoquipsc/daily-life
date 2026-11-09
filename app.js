@@ -1,6 +1,6 @@
 'use strict';
 /* Daily Life — single-file app. Data lives on the phone (localStorage), works offline. */
-const VERSION = '1.7.1';
+const VERSION = '1.8.0';
 const KEY = 'dl:v1';
 const START = '2026-11-09'; // cycle 1, day 1
 
@@ -31,7 +31,7 @@ const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
 const DEF = () => ({
   v: 1,
   settings: { theme: 'auto', name: 'Mo', currency: '$', budget: 1200, screenLimit: 180, waterGoal: 6, kcalGoal: 2200, proteinGoal: 120, weightGoal: '', wpmGoal: 60, pagesGoal: 5, alerts: false, countdown: true },
-  tasks: [], ideas: [], reminders: [], tx: [], shop: { items: [], recent: [] }, cal: [],
+  tasks: [], ideas: [], reminders: [], tx: [], shop: { items: [], recent: [] }, cal: [], goals: [], wo: { plan: { 1: 'upper', 3: 'lower', 5: 'full', 0: 'mobility' }, sessions: [], prs: {}, ladders: { push: 2, squat: 1, core: 0 }, ladderLog: {}, custom: [], override: {} },
   house: { items: [], people: 3, settled: [] },
   days: {}, health: {},
   habits: { book: null, finished: [], typing: [], speaking: [], notes: [] },
@@ -46,6 +46,8 @@ function normalize(raw) {
     raw.house = Object.assign(d.house, raw.house);
     raw.shop = Object.assign(d.shop, raw.shop);
     if (!Array.isArray(raw.cal)) raw.cal = [];
+    if (!Array.isArray(raw.goals)) raw.goals = [];
+    raw.wo = Object.assign(d.wo, raw.wo || {});
     raw.meta = Object.assign(d.meta, raw.meta);
     return raw;
 }
@@ -235,7 +237,7 @@ function vHome() {
     const left = cur.e - m;
     nowCard = '<section class="card" aria-label="Now"><div class="row between"><span class="small b muted">NOW · ' + fmtTs(cur.b.s) + ' – ' + fmtTs(cur.b.e || '') + '</span>' + catPill(cur.b.c) + '</div>' +
       '<div class="row between"><div class="grow"><div style="font-size:20px;font-weight:800">' + esc(cur.b.l) + '</div><div class="sm muted">' + fmtDur(left) + ' left' + (cur.b.sub ? ' · ' + esc(cur.b.sub) : '') + '</div></div>' +
-      '<button class="iconbtn" data-a="timerStart" data-cat="' + cur.b.c + '" data-label="' + esc(cur.b.l) + '" aria-label="Start tracking ' + esc(cur.b.l) + '" style="width:64px;height:64px;flex-basis:64px;border-radius:32px;background:var(--btn);color:var(--btnInk);border:0">' + ic('play', 24) + '</button></div>' +
+      '<button class="iconbtn" data-a="focusOpen" data-cat="' + cur.b.c + '" data-label="' + esc(cur.b.l) + '" aria-label="Focus on ' + esc(cur.b.l) + '" style="width:64px;height:64px;flex-basis:64px;border-radius:32px;background:var(--btn);color:var(--btnInk);border:0">' + ic('play', 24) + '</button></div>' +
       (nxt ? '<div class="sm muted">Next: ' + esc(nxt) + '</div>' : '') + '</section>';
   } else {
     nowCard = '<section class="card"><div class="small b muted">NOW</div><div style="font-size:18px;font-weight:800">Free time</div>' + (nxt ? '<div class="sm muted">Next: ' + esc(nxt) + '</div>' : '') +
@@ -303,6 +305,7 @@ function morningCard(k) {
     '<label class="sr" for="mitText">Or type it</label><input id="mitText" class="in" placeholder="' + (open.length ? 'or type something else…' : 'e.g. Finish Doctrin abstract') + '">' +
     '<div class="small b muted">2 · How do you want to show up today?</div><label class="sr" for="intent">Intention</label><input id="intent" class="in" placeholder="e.g. calm, focused, no phone in main block">' +
     '<div class="small b muted">3 · Today at a glance</div><div class="sm" style="line-height:1.5"><b>' + esc(S.focus) + '</b> · ' + esc(upcoming) + ' · 5 prayers</div>' +
+    (window.fitLine ? fitLine(k, true) : '') +
     '<button class="btn full" data-a="planDone">Start my day</button></section>';
 }
 function comebackCard() {
@@ -516,12 +519,12 @@ function myHabits(k) {
     const dots = last7.map((x) => { const r = t(x); return '<i title="' + nice(x) + '" style="display:block;width:10px;height:10px;border-radius:5px;' + (r === true ? 'background:var(--good)' : r === false ? (x === k ? 'border:2px solid var(--line2)' : 'background:var(--line2)') : 'border:1px dashed var(--line2)') + '"></i>'; }).join('');
     return '<div class="list-row" style="align-items:center;padding:6px 0">' +
       (today === null ? '<span class="box" style="opacity:.35" title="Not today"></span>' : '<button class="tap" data-a="habit" data-id="c:' + c.id + '" aria-pressed="' + today + '" aria-label="' + esc(c.name) + (today ? ' done' : ' not done') + ' today" style="width:auto;min-height:44px;display:flex;align-items:center"><span class="box' + (today ? ' on' : '') + '">' + (today ? ic('check', 14, 3, 'style="color:var(--btnInk)"') : '') + '</span></button>') +
-      '<button class="tap grow" data-a="habitEdit" data-id="' + c.id + '" style="min-height:52px;display:flex;flex-direction:column;justify-content:center;gap:3px"><span class="b" style="font-size:15px">' + esc(c.name) + '</span><span class="small muted">' + (c.target ? esc(c.target) + ' · ' : '') + daysLabel(c.days) + (today === null ? ' · rest day' : '') + '</span><span class="row" style="gap:4px">' + dots + '</span></button>' +
+      '<button class="tap grow" data-a="hstatsOpen" data-id="c:' + c.id + '" style="min-height:52px;display:flex;flex-direction:column;justify-content:center;gap:3px"><span class="b" style="font-size:15px">' + esc(c.name) + '</span><span class="small muted">' + (c.target ? esc(c.target) + ' · ' : '') + daysLabel(c.days) + (today === null ? ' · rest day' : '') + '</span><span class="row" style="gap:4px">' + dots + '</span></button>' +
       '<div style="text-align:right;flex:0 0 auto"><div class="row b" style="gap:3px;justify-content:flex-end;color:var(--warn-fg)">' + ic('flame', 14, 2.4) + st + '</div><div class="small muted">best ' + bs + '</div></div></div>';
   }).join('');
   const dayChips = DAYS_ORDER.map((x) => '<button class="chip on" data-a="toggleChip" data-v="' + x + '" style="padding:0;height:40px" aria-pressed="true">' + DOW[x].slice(0, 2) + '</button>').join('');
   return '<section class="card"><div class="head"><h2>My habits</h2><span class="sm muted">' + list.length + ' active</span></div>' +
-    (rows ? '<div>' + rows + '</div><div class="small muted">Dots = last 7 days · tap a habit to edit</div>' : empty('Add any habit you want to build — it shows up on Today and gets its own streak.')) +
+    (rows ? '<div>' + rows + '</div><div class="small muted">Dots = last 7 days · tap a habit for stats</div>' : empty('Add any habit you want to build — it shows up on Today and gets its own streak.')) +
     '<details' + (list.length ? '' : ' open') + ' style="border-top:1px solid var(--line);padding-top:6px"><summary>' + ic('plus', 16, 2.4) + '&nbsp;Add a habit</summary><div class="col" style="margin-top:6px">' +
     '<label class="f">Habit<input id="nh" class="in" placeholder="e.g. Quran 1 page, Stretch, Journal"></label>' +
     '<label class="f">Goal (optional)<input id="nht" class="in" placeholder="e.g. 10 min, 2 pages, 20 reps"></label>' +
@@ -718,7 +721,7 @@ function vHealth() {
   const smax = Math.max(S.screenLimit * 1.4, ...scr.map((x) => x[1] || 0));
   const sbars = '<div class="row" style="align-items:flex-end;gap:6px;height:100px;position:relative"><i style="position:absolute;left:0;right:0;bottom:' + (18 + (S.screenLimit / smax) * 76) + 'px;border-top:1.5px dashed var(--bad)"></i>' + scr.map(([x, v]) => '<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px"><i style="display:block;width:100%;max-width:30px;border-radius:6px;height:' + (v == null ? 3 : Math.max(3, (v / smax) * 76)) + 'px;background:' + (v == null ? 'var(--soft)' : v > S.screenLimit ? 'var(--bad)' : 'var(--good)') + '"></i><span class="small ' + (x === k ? 'b' : 'muted') + '">' + DOW[parseD(x).getDay()][0] + '</span></div>').join('') + '</div>';
   const scv = h.screen === '' ? '' : num(h.screen);
-  return '<header><h1>Health</h1><div class="sm muted">' + nice(k) + '</div></header>' +
+  return '<header class="row between" style="align-items:baseline"><h1>Health</h1><div class="sm muted">' + nice(k) + '</div></header>' + (window.hwSeg ? hwSeg('health') : '') +
     '<section class="card"><div class="row between">' + ring(h.water, S.waterGoal, 'var(--doc)', 'water', h.water + '/' + S.waterGoal) + ring(kcal, S.kcalGoal, 'var(--meal)', 'kcal', kcal) + ring(slept, 480, 'var(--study)', 'sleep', slept ? fmtDur(slept) : '—') + ring(h.ex.length, 1, 'var(--good)', 'exercise', h.ex.length) + '</div></section>' +
     '<section class="card"><div class="head"><h2>Weight</h2><span class="sm muted">kg</span></div><div class="row"><label class="sr" for="w">Today\'s weight in kg</label><input id="w" type="number" inputmode="decimal" step="0.1" class="in big grow" placeholder="e.g. 72.4" value="' + esc(h.w) + '" data-c="hField" data-f="w"></div>' + wchart + '</section>' +
     '<section class="card"><div class="head"><h2>Food</h2><span class="sm muted">' + kcal + ' / ' + S.kcalGoal + ' kcal · ' + prot + ' / ' + S.proteinGoal + ' g protein</span></div><div class="bar"><i style="width:' + Math.min(100, pct(kcal, S.kcalGoal)) + '%;background:var(--meal)"></i></div>' +
@@ -738,7 +741,7 @@ function vHealth() {
 /* =================== HABITS =================== */
 function vHabits() {
   const k = nowInfo().k; const H = db.habits; const S = db.settings; const bk = H.book;
-  const tile = (n, v, b, c) => '<div class="kpi"><div class="row small b" style="gap:5px;color:var(--' + c + '-fg)">' + ic('flame', 13, 2.4) + n + '</div><b>' + v + '<span class="small muted" style="font-weight:600"> days</span></b><span class="small muted">best ' + b + '</span></div>';
+  const tile = (n, v, b, c, id) => '<button class="kpi tap" data-a="hstatsOpen" data-id="' + id + '" aria-label="' + n + ' stats"><div class="row small b" style="gap:5px;color:var(--' + c + '-fg)">' + ic('flame', 13, 2.4) + n + '</div><b>' + v + '<span class="small muted" style="font-weight:600"> days</span></b><span class="small muted">best ' + b + ' · stats ›</span></button>';
   const risk = HABIT_TESTS().filter(([n]) => n !== 'All 5 prayers').filter(([, t]) => atRisk(t));
   const todayPages = (H.pages || {})[k] || 0;
   const reading = bk ? '<div class="row" style="gap:14px"><div style="width:58px;height:84px;flex:0 0 58px;border-radius:8px;background:var(--doc);color:#fff;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:800">' + esc((bk.title || '?').trim().charAt(0).toUpperCase()) + '</div><div class="grow"><div class="small muted b">NOW READING</div><div class="xb" style="font-size:17px;line-height:1.25">' + esc(bk.title) + '</div><div class="sm muted">' + esc(bk.author) + '</div><div class="bar" style="margin-top:8px"><i style="width:' + pct(bk.page, bk.total) + '%;background:var(--doc)"></i></div><div class="small muted" style="margin-top:4px">page ' + bk.page + ' of ' + bk.total + ' · ' + pct(bk.page, bk.total) + '%' + (bk.total > bk.page ? ' · ~' + Math.ceil((bk.total - bk.page) / Math.max(1, S.pagesGoal)) + ' days left' : '') + '</div></div></div>' +
@@ -760,7 +763,8 @@ function vHabits() {
   const MODES = ['Camera', 'Mirror', 'Voice note', 'Live audience'];
   return backHead('Habits', 'Reading · typing · speaking · ideas', 'today') +
     (risk.length ? '<section class="card tight" style="background:var(--warn-bg);border-color:transparent"><div class="small xb" style="color:var(--warn-fg)">NEVER MISS TWICE</div><div class="sm" style="color:var(--warn-fg)">Missed <b>' + risk.map((x) => x[0]).join(', ') + '</b> yesterday — even a tiny session today keeps the chain.</div></section>' : '') +
-    '<section class="grid3">' + tile('Reading', streak(didRead), best(didRead), 'doc') + tile('Typing', streak(didType), best(didType), 'study') + tile('Speaking', streak(didTalk), best(didTalk), 'tent') + '</section>' +
+    '<section class="grid3">' + tile('Reading', streak(didRead), best(didRead), 'doc', 'read') + tile('Typing', streak(didType), best(didType), 'study', 'type') + tile('Speaking', streak(didTalk), best(didTalk), 'tent', 'talk') + '</section>' +
+    (window.goalsMini ? goalsMini() : '') +
     myHabits(k) +
     '<section class="card"><div class="head"><h2>Reading</h2><span class="sm muted">goal ' + S.pagesGoal + ' pages / day</span></div>' + reading + learn + bookForm +
     (fin.length ? '<div><div class="small muted b" style="margin-bottom:6px">Finished · ' + fin.length + ' this year · tap to see your notes</div><div class="chips">' + fin.map((f) => '<button class="chip" data-a="bookView" data-i="' + H.finished.indexOf(f) + '" style="background:var(--doc-bg);color:var(--doc-fg);border-color:transparent">' + esc(f.title) + (f.rating ? ' · ' + f.rating + '★' : '') + '</button>').join('') + '</div></div>' : '') + '</section>' +
