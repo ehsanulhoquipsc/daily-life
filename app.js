@@ -1,6 +1,6 @@
 'use strict';
 /* Daily Life — single-file app. Data lives on the phone (localStorage), works offline. */
-const VERSION = '1.5.1';
+const VERSION = '1.6.0';
 const KEY = 'dl:v1';
 const START = '2026-11-09'; // cycle 1, day 1
 
@@ -115,8 +115,16 @@ const habitDefs = (k) => {
   const h = [['read', 'Read ' + db.settings.pagesGoal + ' pages'], ['type', 'Typing practice'], ['talk', 'Public speaking practice']];
   if (d === 1 || d === 4) h.push(['hyg', 'Personal hygiene']);
   customHabits().filter((c) => c.days.includes(d) && (!c.start || c.start <= k)).forEach((c) => h.push(['c:' + c.id, c.name, c]));
+  const dbl = (db.days[k] && db.days[k].dbl) || {};
+  Object.keys(dbl).forEach((id) => { if ((dbl[id] || []).length && !h.some((x) => x[0] === id)) { const nm = habitName(id); if (nm) h.push([id, nm, id.startsWith('c:') ? (db.habits.custom || []).find((c) => 'c:' + c.id === id) : null]); } });
   return h;
 };
+function habitName(id) {
+  const B = { read: 'Read ' + db.settings.pagesGoal + ' pages', type: 'Typing practice', talk: 'Public speaking practice', hyg: 'Personal hygiene' };
+  if (B[id]) return B[id]; const c = (db.habits.custom || []).find((x) => 'c:' + x.id === id); return c ? c.name : '';
+}
+const nextSun = (k) => { const d = parseD(k).getDay(); return addD(k, d === 0 ? 7 : 7 - d); };
+const relDay = (k, from) => { const n = diffD(from || nowInfo().k, k); return n === 0 ? 'Today' : n === 1 ? 'Tomorrow' : nice(k); };
 const customHabits = () => (db.habits.custom || []).filter((c) => !c.archived);
 const DAYS_ORDER = [1, 2, 3, 4, 5, 6, 0];
 const daysLabel = (days) => days.length === 7 ? 'Every day' : days.length === 5 && [1, 2, 3, 4, 5].every((x) => days.includes(x)) ? 'Weekdays' : days.length === 2 && days.includes(0) && days.includes(6) ? 'Weekends' : DAYS_ORDER.filter((x) => days.includes(x)).map((x) => DOW[x]).join(', ');
@@ -129,12 +137,13 @@ function habitStats(k) {
 }
 function dayScore(k) {
   const dd = peekDay(k);
-  const tb = tappable(k); const bd = tb.filter(([, i]) => dd.b[i] === 'done').length;
+  const tb = tappable(k).filter(([, i]) => dd.b[i] !== 'moved'); const cu = dd.cu || [];
+  const bd = tb.filter(([, i]) => dd.b[i] === 'done').length + cu.filter((c) => c.done).length;
   const pr = PRAYERS(k).reduce((a, [id]) => a + (dd.p[id] === 'on' ? 1 : dd.p[id] === 'late' ? 0.5 : 0), 0);
   const hs = habitStats(k);
   const top = db.tasks.filter((t) => t.top === k); const td = top.filter((t) => t.st === 'done').length;
-  const tot = tb.length + 5 + hs.total + top.length;
-  return { pct: tot ? Math.round(((bd + pr + hs.done + td) / tot) * 100) : 0, bd, bt: tb.length, pOn: PRAYERS(k).filter(([id]) => dd.p[id] === 'on' || dd.p[id] === 'late').length, hs, td, tt: top.length };
+  const tot = tb.length + cu.length + 5 + hs.total + top.length;
+  return { pct: tot ? Math.round(((bd + pr + hs.done + td) / tot) * 100) : 0, bd, bt: tb.length + cu.length, pOn: PRAYERS(k).filter(([id]) => dd.p[id] === 'on' || dd.p[id] === 'late').length, hs, td, tt: top.length };
 }
 // "Never miss twice": one missed day doesn't break a chain; two in a row does.
 function streak(test) {
@@ -344,23 +353,29 @@ function vToday() {
   const wk = weekKeys(k);
   const strip = wk.map((x) => '<button class="' + (x === k ? 'on' : '') + '" data-a="tDate" data-k="' + x + '" aria-label="' + nice(x) + '" aria-pressed="' + (x === k) + '"><span>' + DOW[parseD(x).getDay()] + '</span><b>' + parseD(x).getDate() + '</b><i style="background:' + (x === nk ? 'var(--warn)' : 'var(--' + sched(x).cat + ')') + '"></i></button>').join('');
   const { cur } = k === nk ? currentBlock(k, nowInfo().m) : {};
-  const BADGE = { done: ['Done', 'good'], skip: ['Skipped', 'bad'], moved: ['Moved → Sun buffer', 'warn'] };
+  const BADGE = { done: ['Done', 'good'], skip: ['Skipped', 'bad'], moved: ['Moved', 'warn'] };
+  const more = (a, extra, label) => '<button class="iconbtn" data-a="' + a + '" ' + extra + ' aria-label="' + esc(label) + '" style="flex:0 0 40px;width:40px;height:40px;border-radius:12px;background:transparent;border:1px solid var(--line)"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.8" fill="currentColor"/><circle cx="12" cy="12" r="1.8" fill="currentColor"/><circle cx="19" cy="12" r="1.8" fill="currentColor"/></svg></button>';
   const blocks = S.blocks.map((b, i) => {
     if (b.c === 'pray') return '<div class="row" style="padding:2px 14px;min-height:30px"><span class="small b" style="width:58px;color:var(--pray-fg)">' + fmtTs(b.s) + '</span><span class="small b" style="color:var(--pray-fg)">' + esc(b.l) + '</span></div>';
-    const st = dd.b[i] || ''; const bd = BADGE[st];
-    return '<button class="block ' + st + (cur && cur.i === i ? ' now' : '') + '" data-a="block" data-i="' + i + '" style="background:var(--' + b.c + '-bg);color:var(--' + b.c + '-fg)" aria-label="' + esc(b.l) + ' at ' + fmtT(b.s) + (bd ? ', ' + bd[0] : '') + '. Tap to change"><span class="t">' + fmtTs(b.s) + '</span><span class="grow"><span class="l b" style="display:block;font-size:15px">' + esc(b.l) + '</span>' + (b.sub || b.e ? '<span class="small" style="opacity:.8">' + (b.e ? 'until ' + fmtTs(b.e) : '') + (b.sub && b.e ? ' · ' : '') + esc(b.sub) + '</span>' : '') + '</span>' + (bd ? '<span class="pill" style="background:var(--' + bd[1] + '-bg);color:var(--' + bd[1] + '-fg)">' + bd[0] + '</span>' : (cur && cur.i === i ? '<span class="pill" style="background:var(--btn);color:var(--btnInk)">Now</span>' : '')) + '</button>';
+ const st = dd.b[i] || ''; const mvTo = (dd.mv || {})[i] || nextSun(k); const bd = st === 'moved' ? ['→ ' + DOW[parseD(mvTo).getDay()] + ' ' + parseD(mvTo).getDate(), 'warn'] : BADGE[st];
+    return '<div class="row" style="gap:6px"><button class="block grow ' + st + (cur && cur.i === i ? ' now' : '') + '" data-a="block" data-i="' + i + '" style="background:var(--' + b.c + '-bg);color:var(--' + b.c + '-fg)" aria-label="' + esc(b.l) + ' at ' + fmtT(b.s) + (bd ? ', ' + bd[0] : '') + '. Tap to change"><span class="t">' + fmtTs(b.s) + '</span><span class="grow"><span class="l b" style="display:block;font-size:15px">' + esc(b.l) + '</span>' + (b.sub || b.e ? '<span class="small" style="opacity:.8">' + (b.e ? 'until ' + fmtTs(b.e) : '') + (b.sub && b.e ? ' · ' : '') + esc(b.sub) + '</span>' : '') + '</span>' + (bd ? '<span class="pill" style="background:var(--' + bd[1] + '-bg);color:var(--' + bd[1] + '-fg)">' + bd[0] + '</span>' : (cur && cur.i === i ? '<span class="pill" style="background:var(--btn);color:var(--btnInk)">Now</span>' : '')) + '</button>' + more('blockMenu', 'data-i="' + i + '"', 'Options for ' + b.l) + '</div>';
   }).join('');
+  // catch-up items pushed to this day
+  const cuList = (dd.cu || []).map((c, j) => '<div class="list-row"><button class="tap row grow" data-a="cuToggle" data-j="' + j + '" aria-pressed="' + !!c.done + '" style="min-height:52px"><span class="box' + (c.done ? ' on' : '') + '">' + (c.done ? ic('check', 14, 3, 'style="color:var(--btnInk)"') : '') + '</span><span class="grow"><span class="b" style="display:block;font-size:15px;' + (c.done ? 'text-decoration:line-through;color:var(--muted)' : '') + '">' + esc(c.l) + '</span><span class="small muted">' + (c.kind === 'task' ? 'Task' : 'Block') + ' moved from ' + nice(c.from) + '</span></span></button><button class="del" data-a="cuBack" data-j="' + j + '" aria-label="Move back to ' + nice(c.from) + '">' + ic('x', 16) + '</button></div>').join('');
   const sc = dayScore(k);
   const prayers = PRAYERS(k).map(([id, n, t]) => { const v = dd.p[id] || ''; return '<button class="' + (v === 'on' ? 'on' : v === 'late' ? 'late' : '') + '" data-a="pray" data-id="' + id + '" aria-label="' + n + ': ' + (v === 'on' ? 'on time' : v === 'late' ? 'late' : 'not marked') + '. Tap to change">' + n + '<span>' + (v === 'on' ? 'On time' : v === 'late' ? 'Late' : fmtTs(t)) + '</span></button>'; }).join('');
   const hab = habitDefs(k).map(([id, l]) => {
     const on = !!dd.h[id];
+    const owe = ((dd.dbl || {})[id] || []); const movedTo = (dd.mk || {})[id];
     let sub = '';
     if (id === 'read') { const bk = db.habits.book; sub = bk ? esc(bk.title) + ' · p.' + bk.page + '/' + bk.total : 'Add your book in Habits'; }
     if (id === 'type') { const s = db.habits.typing.find((x) => x.d === k); sub = s ? s.wpm + ' WPM · ' + s.acc + '% · ' + s.min + ' min' : 'Aim 15 min · log speed in Habits'; }
     if (id === 'talk') { const s = db.habits.speaking.filter((x) => x.d === k); sub = s.length ? s.reduce((a, x) => a + num(x.min), 0) + ' min · ' + esc(s[0].topic) : 'Camera, mirror or voice note'; }
     if (id === 'hyg') sub = 'Mon & Thu';
-    if (id.startsWith('c:')) { const c = habitDefs(k).find((x) => x[0] === id)[2]; sub = (c.target ? esc(c.target) + ' · ' : '') + daysLabel(c.days); }
-    return '<div class="list-row"><button class="tap row grow" data-a="habit" data-id="' + id + '" aria-pressed="' + on + '" style="min-height:52px"><span class="box' + (on ? ' on' : '') + '">' + (on ? ic('check', 14, 3, 'style="color:var(--btnInk)"') : '') + '</span><span class="grow"><span class="b" style="display:block;font-size:15px">' + l + '</span><span class="small muted">' + sub + '</span></span></button>' + (['read', 'type', 'talk'].includes(id) ? '<a href="#habits" class="link" style="white-space:nowrap">Log ›</a>' : '') + '</div>';
+    if (id.startsWith('c:')) { const c = habitDefs(k).find((x) => x[0] === id)[2]; if (c) sub = (c.target ? esc(c.target) + ' · ' : '') + daysLabel(c.days); }
+    if (owe.length) sub = '<b style="color:var(--warn-fg)">Do ' + (owe.length + 1) + '× today</b> · makes up ' + owe.map((x) => nice(x)).join(', ');
+    const tag = owe.length ? '<span class="pill" style="background:var(--warn);color:#fff">' + (owe.length + 1) + '×</span>' : movedTo && !on ? '<span class="pill" style="background:var(--warn-bg);color:var(--warn-fg)">→ ' + relDay(movedTo, k) + '</span>' : '';
+    return '<div class="list-row"><button class="tap row grow" data-a="habit" data-id="' + id + '" aria-pressed="' + on + '" style="min-height:52px"><span class="box' + (on ? ' on' : '') + '">' + (on ? ic('check', 14, 3, 'style="color:var(--btnInk)"') : '') + '</span><span class="grow"><span class="b" style="display:block;font-size:15px;' + (movedTo && !on ? 'color:var(--muted)' : '') + '">' + l + '</span><span class="small muted">' + sub + '</span></span>' + tag + '</button>' + more('habitMenu', 'data-id="' + id + '"', 'Can\'t do ' + l + ' today?') + '</div>';
   }).join('') + (dd.x || []).map((x, j) => '<div class="list-row"><button class="tap row grow" data-a="xHabit" data-j="' + j + '" aria-pressed="' + !!x.done + '" style="min-height:52px"><span class="box' + (x.done ? ' on' : '') + '">' + (x.done ? ic('check', 14, 3, 'style="color:var(--btnInk)"') : '') + '</span><span class="b grow" style="font-size:15px">' + esc(x.t) + '</span></button><button class="del" data-a="xDel" data-j="' + j + '" aria-label="Remove ' + esc(x.t) + '">' + ic('x', 16) + '</button></div>').join('');
   const hh = peekH(k);
   const slept = sleepMin(hh);
@@ -370,7 +385,9 @@ function vToday() {
   return '<header class="row between"><div><h1>' + (k === nk ? 'Today' : nice(k)) + '</h1><div class="sm muted">' + nice(k) + ' · focus: ' + esc(S.focus) + '</div></div><div class="row" style="gap:6px"><button class="iconbtn" data-a="tWeek" data-n="-7" aria-label="Previous week">' + ic('back', 18) + '</button><button class="iconbtn" data-a="tWeek" data-n="7" aria-label="Next week">' + ic('chev', 18) + '</button></div></header>' +
     '<div class="daystrip">' + strip + '</div>' +
     (k !== nk ? '<button class="btn ghost sm" data-a="tDate" data-k="' + nk + '">Jump to today</button>' : '') +
-    '<section class="card tight"><div class="head"><h2>Schedule</h2><span class="sm muted">' + sc.bd + ' of ' + sc.bt + ' done</span></div><div class="small muted">Tap a block: done → skipped → moved → clear</div><div class="col" style="gap:6px">' + blocks + '</div></section>' +
+    (k >= nk ? '<button class="btn ghost full" data-a="emergency" style="border-color:var(--warn);color:var(--warn-fg)">Emergency or bad day? Move what\'s left</button>' : '') +
+    (cuList ? '<section class="card tight" style="border:2px solid var(--warn)"><div class="head"><h2>Catch-up</h2><span class="sm muted">' + (dd.cu || []).filter((c) => c.done).length + ' / ' + (dd.cu || []).length + '</span></div><div class="small muted">Moved here from other days. × sends it back.</div><div>' + cuList + '</div></section>' : '') +
+    '<section class="card tight"><div class="head"><h2>Schedule</h2><span class="sm muted">' + sc.bd + ' of ' + sc.bt + ' done</span></div><div class="small muted">Tap a block: done → skipped → clear · ⋯ to move it</div><div class="col" style="gap:6px">' + blocks + '</div></section>' +
     '<section class="card tight"><div class="head"><h2>Prayers</h2><span class="sm muted">' + sc.pOn + ' / 5</span></div><div class="prayers">' + prayers + '</div></section>' +
     '<section class="card tight"><div class="head"><h2>Habits</h2><span class="row" style="gap:10px"><span class="sm muted">' + sc.hs.done + ' / ' + sc.hs.total + '</span><a href="#habits" class="link">Open Habits ›</a></span></div><div>' + hab + '</div>' +
     '<div class="row"><label class="sr" for="xh">Other habit</label><input id="xh" class="in grow" placeholder="Other habit for today…" data-enter="xAdd"><button class="btn ghost sm" data-a="xAdd">Add</button></div></section>' +
@@ -419,6 +436,61 @@ function shopCard() {
     (S.items.length ? '<div class="grid3">' + (got ? '<button class="btn ghost sm" data-a="shopClearGot" style="padding:0 6px;white-space:nowrap">Clear ticked</button>' : '<span></span>') + '<button class="btn ghost sm" data-a="shopShare" style="padding:0 6px;white-space:nowrap">Share</button><button class="btn ghost sm" data-a="shopReset" style="color:var(--bad);padding:0 6px;white-space:nowrap">Reset list</button></div>' : '') + '</section>';
 }
 function shopRemember(names) { const S = db.shop; const set = new Set(); S.recent = names.concat(S.recent || []).filter((t) => { const k = t.toLowerCase(); if (set.has(k)) return false; set.add(k); return true; }).slice(0, 20); }
+function dayChips(from, a, extra, n) {
+  return '<div class="chips">' + [...Array(n || 6)].map((_, i) => addD(from, i + 1)).map((x) => '<button class="chip" data-a="' + a + '" data-to="' + x + '" ' + extra + '>' + (x === addD(nowInfo().k, 1) ? 'Tomorrow' : DOW[parseD(x).getDay()] + ' ' + parseD(x).getDate()) + '</button>').join('') + '</div>';
+}
+function blockSheet(k, i) {
+  const b = sched(k).blocks[i]; const st = peekDay(k).b[i] || ''; const sun = nextSun(k);
+  return '<h2>' + esc(b.l) + '</h2><div class="sm muted">' + nice(k) + ' · ' + fmtTs(b.s) + (b.e ? ' – ' + fmtTs(b.e) : '') + '</div>' +
+    (st === 'moved' ? '<div class="sm b" style="color:var(--warn-fg)">Moved to ' + nice((peekDay(k).mv || {})[i] || sun) + '</div><button class="btn full" data-a="blockUnmove" data-i="' + i + '">Undo move — keep it on ' + nice(k) + '</button>' :
+      '<button class="btn full" data-a="blockPush" data-i="' + i + '" data-to="' + sun + '">Push to Sunday (' + nice(sun) + ')</button>' +
+      '<div class="small b muted">or catch up on another day</div>' + dayChips(k, 'blockPush', 'data-i="' + i + '"', 6) +
+      '<div class="grid2"><button class="btn ghost sm" data-a="blockSet" data-i="' + i + '" data-v="done">Mark done</button><button class="btn ghost sm" data-a="blockSet" data-i="' + i + '" data-v="skip">Skip (emergency)</button></div>' +
+      (st ? '<button class="btn ghost full" data-a="blockSet" data-i="' + i + '" data-v="">Clear status</button>' : '')) +
+    '<button class="btn ghost full" data-a="sheetClose">Close</button>';
+}
+function habitSheetMove(k, id) {
+  const dd = peekDay(k); const moved = (dd.mk || {})[id]; const nm = habitName(id);
+  return '<h2>Can\'t do it today?</h2><div class="sm"><b>' + esc(nm) + '</b> · ' + nice(k) + '</div>' +
+    (moved ? '<div class="sm b" style="color:var(--warn-fg)">You\'ll do it double on ' + nice(moved) + '.</div><button class="btn ghost full" data-a="habitUnmove" data-id="' + id + '">Cancel — I\'ll do it today</button>' :
+      '<div class="sm muted">Pick a day to do it double. When you tick it that day, today counts as done too — your streak stays safe.</div>' + dayChips(k, 'habitMove', 'data-id="' + id + '"', 6)) +
+    '<button class="btn ghost full" data-a="sheetClose">Close</button>';
+}
+function emergencySheet(k) {
+  const dd = peekDay(k); const isNow = k === nowInfo().k; const m = nowInfo().m; const sun = nextSun(k);
+  const blocks = tappable(k).filter(([b, i]) => !dd.b[i] && !['meal', 'rest'].includes(b.c) && (!isNow || (b.e ? ADJ(toM(b.e)) : ADJ(toM(b.s)) + 30) > m));
+  const tasks = db.tasks.filter((t) => t.top === k && t.st !== 'done');
+  const habs = habitDefs(k).filter(([id]) => !dd.h[id] && !(dd.mk || {})[id]);
+  const cb = (name, val, label, sub, off) => '<label class="list-row" style="cursor:pointer"><input type="checkbox"' + (off ? '' : ' checked') + ' name="' + name + '" value="' + esc(val) + '" style="width:22px;height:22px;accent-color:var(--warn)"><span class="grow"><span class="b" style="display:block;font-size:14px">' + esc(label) + '</span>' + (sub ? '<span class="small muted">' + sub + '</span>' : '') + '</span></label>';
+  return '<h2>Move what\'s left</h2><div class="sm muted">Untick anything you can still do today.</div>' +
+    (blocks.length + tasks.length ? '<div class="small xb" style="color:var(--warn-fg)">TO SUNDAY · ' + nice(sun).toUpperCase() + '</div><div>' + blocks.map(([b, i]) => cb('eb', i, b.l, fmtTs(b.s) + (b.e ? ' – ' + fmtTs(b.e) : '') + (b.c === 'work' ? ' · tick only if you can catch up on Sunday' : ''), b.c === 'work')).join('') + tasks.map((t) => cb('et', t.id, t.t, 'Top 3 task')).join('') + '</div>' : '') +
+    (habs.length ? '<div class="small xb" style="color:var(--warn-fg)">HABITS · DO DOUBLE ON</div><div class="chips" id="emday">' + [1, 2, 3].map((n) => { const x = addD(k, n); return '<button class="chip' + (n === 1 ? ' on' : '') + '" data-a="pickChip" data-group="emday" data-v="' + x + '">' + relDay(x, k) + '</button>'; }).join('') + '</div><div>' + habs.map(([id, l]) => cb('eh', id, l, '')).join('') + '</div>' : '') +
+    (blocks.length + tasks.length + habs.length ? '<button class="btn full" data-a="emergencyGo" style="background:var(--warn);color:#fff">Move selected</button>' : empty('Nothing left to move today.')) +
+    '<button class="btn ghost full" data-a="sheetClose">Cancel</button>';
+}
+// move helpers (shared by single moves and emergency)
+function moveBlock(k, i, to) {
+  const dd = day(k); const b = sched(k).blocks[+i]; unmoveBlock(k, i);
+  dd.b[i] = 'moved'; dd.mv = dd.mv || {}; dd.mv[i] = to;
+  const t = day(to); t.cu = t.cu || []; t.cu.push({ id: uid(), kind: 'block', from: k, i: +i, l: b.l, c: b.c, done: false });
+}
+function unmoveBlock(k, i) {
+  const dd = day(k); const to = (dd.mv || {})[i]; if (to && db.days[to]) db.days[to].cu = (db.days[to].cu || []).filter((c) => !(c.kind === 'block' && c.from === k && c.i === +i));
+  if (dd.mv) delete dd.mv[i]; if (dd.b[i] === 'moved') delete dd.b[i];
+}
+function moveTask(t, from, to) {
+  if (t.top === from) t.top = ''; t.due = to; t.pushedFrom = from;
+  const d = day(to); d.cu = (d.cu || []).filter((c) => c.tid !== t.id); d.cu.push({ id: uid(), kind: 'task', tid: t.id, from, l: t.t, done: false });
+}
+function moveHabit(k, id, to) {
+  unmoveHabit(k, id); const dd = day(k); dd.mk = dd.mk || {}; dd.mk[id] = to;
+  const t = day(to); t.dbl = t.dbl || {}; t.dbl[id] = (t.dbl[id] || []).filter((x) => x !== k).concat([k]);
+}
+function unmoveHabit(k, id) {
+  const dd = day(k); const to = (dd.mk || {})[id]; if (!to) return;
+  const t = db.days[to]; if (t && t.dbl && t.dbl[id]) { t.dbl[id] = t.dbl[id].filter((x) => x !== k); if (!t.dbl[id].length) delete t.dbl[id]; }
+  delete dd.mk[id];
+}
 function taskSheet(t) {
   t = t || { t: '', proj: 'personal', due: '', est: '', st: 'todo' };
   return '<h2>' + (t.id ? 'Edit task' : 'New task') + '</h2>' +
@@ -427,6 +499,7 @@ function taskSheet(t) {
     '<div class="grid2"><label class="f">Due date<input id="tdue" type="date" class="in" value="' + esc(t.due) + '"></label><label class="f">Estimate (min)<input id="test" type="number" inputmode="numeric" class="in" value="' + esc(t.est) + '"></label></div>' +
     (t.id ? '<div class="chips" id="tst">' + [['todo', 'To do'], ['doing', 'In progress'], ['done', 'Done']].map(([v, l]) => '<button class="chip' + (t.st === v ? ' on' : '') + '" data-a="pickChip" data-group="tst" data-v="' + v + '">' + l + '</button>').join('') + '</div>' : '') +
     '<button class="btn full" data-a="taskSave" data-id="' + (t.id || '') + '">Save</button>' +
+    (t.id && t.st !== 'done' ? '<button class="btn ghost full" data-a="taskPushSun" data-id="' + t.id + '">Push to Sunday (' + nice(nextSun(nowInfo().k)) + ')</button>' : '') +
     (t.id ? '<button class="btn ghost full" data-a="taskDel" data-id="' + t.id + '" style="color:var(--bad)">Delete task</button>' : '') +
     '<button class="btn ghost full" data-a="sheetClose">Cancel</button>';
 }
@@ -721,9 +794,47 @@ const A = {
   // today
   tDate: (d) => { ui.tDate = d.k === nowInfo().k ? null : d.k; render(true); },
   tWeek: (d) => { ui.tDate = addD(ui.tDate || nowInfo().k, +d.n); render(true); },
-  block: (d) => { const k = ui.tDate || nowInfo().k; const dd = day(k); const O = ['', 'done', 'skip', 'moved']; dd.b[d.i] = O[(O.indexOf(dd.b[d.i] || '') + 1) % 4]; if (!dd.b[d.i]) delete dd.b[d.i]; commit(); },
+  block: (d) => {
+    const k = ui.tDate || nowInfo().k; const dd = day(k);
+    if (dd.b[d.i] === 'moved') return openSheet(blockSheet(k, +d.i));
+    const O = ['', 'done', 'skip']; dd.b[d.i] = O[(O.indexOf(dd.b[d.i] || '') + 1) % 3]; if (!dd.b[d.i]) delete dd.b[d.i]; commit();
+  },
+  blockMenu: (d) => openSheet(blockSheet(ui.tDate || nowInfo().k, +d.i)),
+  blockPush: (d) => { const k = ui.tDate || nowInfo().k; moveBlock(k, +d.i, d.to); closeSheet(); commit('Moved to ' + nice(d.to) + ' catch-up'); },
+  blockUnmove: (d) => { const k = ui.tDate || nowInfo().k; unmoveBlock(k, +d.i); closeSheet(); commit('Back on ' + nice(k)); },
+  blockSet: (d) => { const k = ui.tDate || nowInfo().k; unmoveBlock(k, +d.i); const dd = day(k); if (d.v) dd.b[d.i] = d.v; else delete dd.b[d.i]; closeSheet(); commit(); },
+  cuToggle: (d) => {
+    const k = ui.tDate || nowInfo().k; const c = day(k).cu[+d.j]; c.done = !c.done;
+    if (c.kind === 'task') { const t = db.tasks.find((x) => x.id === c.tid); if (t) { if (c.done) { t.st = 'done'; t.doneAt = k; } else { t.st = 'todo'; delete t.doneAt; } } }
+    commit(c.done ? 'Caught up' : '');
+  },
+  cuBack: (d) => {
+    const k = ui.tDate || nowInfo().k; const c = day(k).cu[+d.j]; if (!c) return;
+    if (c.kind === 'block') unmoveBlock(c.from, c.i);
+    else { day(k).cu.splice(+d.j, 1); const t = db.tasks.find((x) => x.id === c.tid); if (t) { t.due = c.from; delete t.pushedFrom; } }
+    commit('Moved back to ' + nice(c.from));
+  },
+  habitMenu: (d) => openSheet(habitSheetMove(ui.tDate || nowInfo().k, d.id)),
+  habitMove: (d) => { const k = ui.tDate || nowInfo().k; moveHabit(k, d.id, d.to); closeSheet(); commit('Do it double on ' + nice(d.to)); },
+  habitUnmove: (d) => { unmoveHabit(ui.tDate || nowInfo().k, d.id); closeSheet(); commit('OK — do it today'); },
+  taskPushSun: (d) => { const t = db.tasks.find((x) => x.id === d.id); const k = nowInfo().k; const sun = nextSun(k); moveTask(t, k, sun); closeSheet(); commit('Pushed to ' + nice(sun)); },
+  emergency: () => openSheet(emergencySheet(ui.tDate || nowInfo().k)),
+  emergencyGo: () => {
+    const k = ui.tDate || nowInfo().k; const sun = nextSun(k); const to = chipVal('emday') || addD(k, 1);
+    const sel = (n) => [...document.querySelectorAll('#sheet input[name=' + n + ']:checked')].map((x) => x.value);
+    const B = sel('eb'), T = sel('et'), H = sel('eh');
+    B.forEach((i) => moveBlock(k, +i, sun));
+    T.forEach((id) => { const t = db.tasks.find((x) => x.id === id); if (t) moveTask(t, k, sun); });
+    H.forEach((id) => moveHabit(k, id, to));
+    closeSheet(); commit('Moved ' + (B.length + T.length) + ' to Sunday' + (H.length ? ' · ' + H.length + ' habit' + (H.length === 1 ? '' : 's') + ' double ' + (to === addD(k, 1) ? 'tomorrow' : 'on ' + nice(to)) : '') + '. Take care.');
+  },
   pray: (d) => { const k = ui.tDate || nowInfo().k; const dd = day(k); const v = dd.p[d.id] || ''; dd.p[d.id] = v === '' ? 'on' : v === 'on' ? 'late' : ''; if (!dd.p[d.id]) delete dd.p[d.id]; commit(); },
-  habit: (d) => { const k = route === 'habits' ? nowInfo().k : ui.tDate || nowInfo().k; const dd = day(k); dd.h[d.id] = !dd.h[d.id]; commit(); },
+  habit: (d) => {
+    const k = route === 'habits' ? nowInfo().k : ui.tDate || nowInfo().k; const dd = day(k); dd.h[d.id] = !dd.h[d.id];
+    if (dd.h[d.id] && dd.mk && dd.mk[d.id]) unmoveHabit(k, d.id); // did it after all
+    const owe = (dd.dbl || {})[d.id] || []; owe.forEach((f) => { day(f).h[d.id] = dd.h[d.id]; }); // double session covers the missed day(s)
+    commit(dd.h[d.id] && owe.length ? 'Double done — ' + owe.map(nice).join(', ') + ' counted too' : '');
+  },
   xHabit: (d) => { const dd = day(ui.tDate || nowInfo().k); dd.x[d.j].done = !dd.x[d.j].done; commit(); },
   xDel: (d) => { const dd = day(ui.tDate || nowInfo().k); dd.x.splice(+d.j, 1); commit(); },
   xAdd: () => { const t = val('xh'); if (!t) return; day(ui.tDate || nowInfo().k).x.push({ t, done: false }); commit('Habit added for this day'); },
