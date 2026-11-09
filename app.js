@@ -1,6 +1,6 @@
 'use strict';
 /* Daily Life — single-file app. Data lives on the phone (localStorage), works offline. */
-const VERSION = '1.7.0';
+const VERSION = '1.7.1';
 const KEY = 'dl:v1';
 const START = '2026-11-09'; // cycle 1, day 1
 
@@ -838,6 +838,7 @@ function vSettings() {
     '<div class="sync' + (navigator.onLine ? '' : ' off') + '" style="align-self:flex-start"><i></i>' + (navigator.onLine ? 'Online' : 'Offline') + '</div>' +
     '<button class="btn full" data-a="export">Export backup (.json)</button><label class="btn ghost full" style="cursor:pointer">Import backup<input type="file" accept="application/json,.json" data-c="import" class="sr"></label>' +
     '<button class="btn ghost full" data-a="reset" style="color:var(--bad)">Erase all data</button></section>' +
+    '<section class="card"><div class="row between"><div><h2>App version</h2><div class="small muted">v' + VERSION + '</div></div><button class="btn ghost sm" data-a="checkUpdate">Check for updates</button></div></section>' +
     '<section class="card"><h2>Install</h2><div class="sm muted">In Chrome tap ⋮ → <b>Add to Home screen</b> (or <b>Install app</b>). It then opens full-screen like a normal app.</div>' + (window.__installEvt ? '<button class="btn full" data-a="install">Install now</button>' : '') + '</section>';
 }
 
@@ -1083,6 +1084,15 @@ const A = {
   signOut: () => { if (window.DLSync && confirm('Sign out? Your data stays on this phone.')) window.DLSync.signOut(); },
   syncNow: () => window.DLSync && window.DLSync.syncNow(),
   syncRetry: () => loadSync(),
+  checkUpdate: async () => {
+    toast('Checking…');
+    try {
+      const reg = window.__swReg || (navigator.serviceWorker && await navigator.serviceWorker.getRegistration());
+      if (reg) { await reg.update(); if (reg.waiting) reg.waiting.postMessage('skipWaiting'); }
+      if (window.caches) { const ks = await caches.keys(); await Promise.all(ks.map((k) => caches.delete(k))); }
+    } catch (e) {}
+    location.reload();
+  },
   install: async () => { const e = window.__installEvt; if (!e) return; e.prompt(); await e.userChoice; window.__installEvt = null; render(true); }
 };
 const CH = {
@@ -1173,5 +1183,13 @@ function loadSync() {
 }
 loadSync();
 window.addEventListener('online', () => { if (SYNC.failed) loadSync(); });
-if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => {});
+if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then((reg) => {
+    window.__swReg = reg;
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') reg.update().catch(() => {}); });
+  }).catch(() => {});
+  // when a new version takes over, reload once so you see it straight away
+  let reloaded = false; const hadController = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (!hadController || reloaded) return; reloaded = true; const a = document.activeElement; if (a && /INPUT|TEXTAREA/.test(a.tagName)) return; location.reload(); });
+}
 if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});

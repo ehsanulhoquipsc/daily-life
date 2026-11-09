@@ -1,5 +1,5 @@
 // Daily Life service worker: cache the app shell so it opens with no internet.
-const CACHE = 'dl-v1.7.0';
+const CACHE = 'dl-v1.7.1';
 const SHELL = ['./', 'index.html', 'app.css', 'app.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'sync.js', 'vendor/firebase-app.js', 'vendor/firebase-auth.js', 'vendor/firebase-firestore.js'];
 
 self.addEventListener('install', (e) => {
@@ -13,12 +13,13 @@ self.addEventListener('fetch', (e) => {
   const req = e.request;
   if (req.method !== 'GET' || new URL(req.url).origin !== location.origin) return;
   e.respondWith(
-    fetch(req).then((res) => {
+    fetch(req, { cache: 'no-store' }).then((res) => { // always ask the server for the newest file
       if (res.ok) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(req, copy)); }
       return res;
     }).catch(() => caches.match(req, { ignoreSearch: true }).then((r) => r || caches.match('index.html')))
   );
 });
+self.addEventListener('message', (e) => { if (e.data === 'skipWaiting') self.skipWaiting(); });
 self.addEventListener('notificationclick', (e) => {
   e.notification.close();
   e.waitUntil(self.clients.matchAll({ type: 'window' }).then((cs) => (cs[0] ? cs[0].focus() : self.clients.openWindow('./#inbox'))));
