@@ -94,8 +94,8 @@ select.in{appearance:none;-webkit-appearance:none}
 .step button.p{background:var(--btn);color:var(--btnInk);border:0}
 .step output{font-size:20px;font-weight:800;min-width:30px;text-align:center}
 .fab{position:fixed;right:max(18px,calc(50% - 242px));bottom:calc(92px + env(safe-area-inset-bottom));width:56px;height:56px;border-radius:28px;background:var(--btn);color:var(--btnInk);border:0;box-shadow:0 6px 18px rgba(0,0,0,.25);display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:5}
-#nav{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);display:grid;grid-template-columns:repeat(5,minmax(0,1fr));padding:6px 4px calc(8px + env(safe-area-inset-bottom));z-index:10;max-width:520px;margin:0 auto}
-#nav a{min-height:52px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:11px;font-weight:500;color:var(--muted)}
+#nav{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);display:grid;grid-template-columns:repeat(6,minmax(0,1fr));padding:6px 2px calc(8px + env(safe-area-inset-bottom));z-index:10;max-width:520px;margin:0 auto}
+#nav a{min-height:52px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:10.5px;font-weight:500;color:var(--muted)}
 #nav a.on{color:var(--ink);font-weight:700}
 .sheet{position:fixed;inset:0;z-index:30;background:rgba(0,0,0,.45);display:flex;align-items:flex-end;justify-content:center}
 .sheet[hidden]{display:none}

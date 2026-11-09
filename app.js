@@ -1,6 +1,6 @@
 'use strict';
 /* Daily Life — single-file app. Data lives on the phone (localStorage), works offline. */
-const VERSION = '1.6.0';
+const VERSION = '1.7.0';
 const KEY = 'dl:v1';
 const START = '2026-11-09'; // cycle 1, day 1
 
@@ -31,7 +31,7 @@ const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
 const DEF = () => ({
   v: 1,
   settings: { theme: 'auto', name: 'Mo', currency: '$', budget: 1200, screenLimit: 180, waterGoal: 6, kcalGoal: 2200, proteinGoal: 120, weightGoal: '', wpmGoal: 60, pagesGoal: 5, alerts: false, countdown: true },
-  tasks: [], ideas: [], reminders: [], tx: [], shop: { items: [], recent: [] },
+  tasks: [], ideas: [], reminders: [], tx: [], shop: { items: [], recent: [] }, cal: [],
   house: { items: [], people: 3, settled: [] },
   days: {}, health: {},
   habits: { book: null, finished: [], typing: [], speaking: [], notes: [] },
@@ -45,6 +45,7 @@ function normalize(raw) {
     raw.habits = Object.assign(d.habits, raw.habits);
     raw.house = Object.assign(d.house, raw.house);
     raw.shop = Object.assign(d.shop, raw.shop);
+    if (!Array.isArray(raw.cal)) raw.cal = [];
     raw.meta = Object.assign(d.meta, raw.meta);
     return raw;
 }
@@ -184,6 +185,7 @@ const P = {
   trash: '<path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/>', check: '<path d="M5 12l5 5L20 7"/>',
   flame: '<path d="M12 2c1 4 5 5 5 10a5 5 0 0 1-10 0c0-3 2-4 2-7 2 1 3 3 3 5"/>',
   star: '<path d="M12 3l2.8 5.7 6.2.9-4.5 4.4 1 6.2L12 17.3 6.5 20.2l1-6.2L3 9.6l6.2-.9z"/>',
+  calendar: '<rect x="3" y="4.5" width="18" height="16.5" rx="3"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4"/><circle cx="12" cy="15" r="1.3" fill="currentColor"/>',
   book: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z"/><path d="M4 19.5V21h16"/>'
 };
 const ic = (n, s = 22, w = 2, extra = '') => '<svg width="' + s + '" height="' + s + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="' + w + '" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" ' + extra + '>' + P[n] + '</svg>';
@@ -270,6 +272,7 @@ function vHome() {
     '<div class="grow"><div class="sm" style="color:var(--heroMuted)">' + cyc + '</div><div class="bar" style="background:rgba(255,255,255,.14);margin:8px 0 12px"><i style="width:' + cycPct + '%;background:#fff"></i></div><div class="row between"><div class="stat"><b>' + sc.pOn + '/5</b><span>Prayers</span></div><div class="stat"><b>' + sc.hs.done + '/' + sc.hs.total + '</b><span>Habits</span></div><div class="stat"><b>' + sc.td + '/' + (sc.tt || 3) + '</b><span>Top 3</span></div><div class="stat"><b>' + sc.bd + '/' + sc.bt + '</b><span>Blocks</span></div></div></div></a>' +
     morningCard(k) + comebackCard() +
     nowCard +
+    (function () { const dl = deadlinesSoon(14, 3); return dl.length ? '<section class="card tight"><div class="head"><h2>Deadlines</h2><a class="link" href="#calendar" style="color:var(--muted)">Calendar ›</a></div>' + dl.map((o) => dlBox(o, k)).join('') + '</section>' : ''; })() +
     '<section aria-label="Challenges"><div class="head" style="margin-bottom:8px"><h2>Challenges</h2><a class="link" href="#reports" style="color:var(--muted)">Reports ›</a></div><div class="grid2">' + ch + '</div></section>' +
     '<section class="card tight"><div class="head"><h2>Top 3 today</h2><a class="link" href="#tasks" style="color:var(--muted)">All tasks ›</a></div><div>' + topHtml + '</div></section>' +
     '<section class="card tight"><div class="head"><h2>Ideas</h2><a class="link" href="#inbox" data-a="inboxTab" data-tab="idea" style="color:var(--muted)">Inbox ›</a></div>' +
@@ -387,6 +390,7 @@ function vToday() {
     (k !== nk ? '<button class="btn ghost sm" data-a="tDate" data-k="' + nk + '">Jump to today</button>' : '') +
     (k >= nk ? '<button class="btn ghost full" data-a="emergency" style="border-color:var(--warn);color:var(--warn-fg)">Emergency or bad day? Move what\'s left</button>' : '') +
     (cuList ? '<section class="card tight" style="border:2px solid var(--warn)"><div class="head"><h2>Catch-up</h2><span class="sm muted">' + (dd.cu || []).filter((c) => c.done).length + ' / ' + (dd.cu || []).length + '</span></div><div class="small muted">Moved here from other days. × sends it back.</div><div>' + cuList + '</div></section>' : '') +
+    (function () { const oc = calRange(k, k); return oc.length ? '<section class="card tight"><div class="head"><h2>On the calendar</h2><a class="link" href="#calendar" data-a="calJump" data-k="' + k + '" style="color:var(--muted)">Open ›</a></div>' + oc.map((o) => calRow(o, nk, false)).join('') + '</section>' : ''; })() +
     '<section class="card tight"><div class="head"><h2>Schedule</h2><span class="sm muted">' + sc.bd + ' of ' + sc.bt + ' done</span></div><div class="small muted">Tap a block: done → skipped → clear · ⋯ to move it</div><div class="col" style="gap:6px">' + blocks + '</div></section>' +
     '<section class="card tight"><div class="head"><h2>Prayers</h2><span class="sm muted">' + sc.pOn + ' / 5</span></div><div class="prayers">' + prayers + '</div></section>' +
     '<section class="card tight"><div class="head"><h2>Habits</h2><span class="row" style="gap:10px"><span class="sm muted">' + sc.hs.done + ' / ' + sc.hs.total + '</span><a href="#habits" class="link">Open Habits ›</a></span></div><div>' + hab + '</div>' +
@@ -547,6 +551,100 @@ function bookSheet(f, i) {
     (f.action ? '<div class="sm"><b>Action:</b> ' + esc(f.action) + '</div>' : '') +
     '<div class="b sm">Takeaways (' + (f.notes || []).length + ')</div>' + ((f.notes || []).map((n) => '<div class="sm" style="background:var(--soft);border-radius:12px;padding:10px 12px;line-height:1.4;white-space:pre-wrap">' + esc(n.t) + (n.p ? '<span class="small muted" style="display:block">p.' + n.p + '</span>' : '') + '</div>').join('') || empty('No notes saved for this book.')) +
     '<button class="btn full" data-a="bookIdea" data-i="' + i + '">Turn into a reel / post idea</button><button class="btn ghost full" data-a="sheetClose">Close</button>';
+}
+
+/* =================== CALENDAR =================== */
+const CALK = {
+  deadline: { l: 'Deadline', c: 'var(--bad)', bg: 'var(--bad-bg)', fg: 'var(--bad-fg)' },
+  plan: { l: 'Plan', c: 'var(--doc)', bg: 'var(--doc-bg)', fg: 'var(--doc-fg)' },
+  event: { l: 'Event', c: 'var(--study)', bg: 'var(--study-bg)', fg: 'var(--study-fg)' },
+  task: { l: 'Task due', c: 'var(--work)', bg: 'var(--work-bg)', fg: 'var(--work-fg)' },
+  rem: { l: 'Reminder', c: 'var(--warn)', bg: 'var(--warn-bg)', fg: 'var(--warn-fg)' }
+};
+const REMS = [['none', 'No reminder'], ['same', 'Same day 9 AM'], ['day', '1 day before'], ['week', '1 week before']];
+const REPS = [['none', 'Once'], ['weekly', 'Every week'], ['monthly', 'Every month']];
+const projName = (p) => (PROJ.find((x) => x[0] === p) || ['', 'Personal'])[1];
+// every calendar item (own entries incl. repeats, task due dates, inbox reminders) between a and b (date keys, inclusive)
+function calRange(a, b) {
+  const out = [];
+  (db.cal || []).forEach((e) => {
+    if (!e.rep || e.rep === 'none') { if (e.d >= a && e.d <= b) out.push({ e, d: e.d }); return; }
+    let k = e.d; let n = 0;
+    if (e.rep === 'weekly' && k < a) k = addD(k, Math.floor(diffD(k, a) / 7) * 7);
+    while (k <= b && n < 400) {
+      if (k >= a && !(e.skip || {})[k]) out.push({ e, d: k });
+      n++;
+      if (e.rep === 'weekly') k = addD(k, 7);
+      else { const o = parseD(e.d); const m = new Date(o.getFullYear(), o.getMonth() + n, 1); const dim = new Date(m.getFullYear(), m.getMonth() + 1, 0).getDate(); m.setDate(Math.min(o.getDate(), dim)); k = dkey(m); }
+    }
+  });
+  db.tasks.forEach((t) => { if (t.due && t.due >= a && t.due <= b && t.st !== 'done') out.push({ e: { id: 't:' + t.id, t: t.t, k: 'task', p: t.proj, tid: t.id, time: '' }, d: t.due }); });
+  db.reminders.forEach((r) => { if (r.when && !r.done) { const k = r.when.slice(0, 10); if (k >= a && k <= b) out.push({ e: { id: 'r:' + r.id, t: r.t, k: 'rem', p: 'personal', time: r.when.slice(11, 16) }, d: k }); } });
+  return out.sort((x, y) => (x.d + (x.e.time || '00:00')) < (y.d + (y.e.time || '00:00')) ? -1 : 1);
+}
+const calDone = (o) => !!(o.e.doneOn || {})[o.d];
+const leftTxt = (n) => n < 0 ? Math.abs(n) + 'd overdue' : n === 0 ? 'Today' : n === 1 ? 'Tomorrow' : 'in ' + n + ' days';
+function calRow(o, nk, showDate) {
+  const K = CALK[o.e.k]; const done = calDone(o); const n = diffD(nk, o.d);
+  const meta = (showDate ? nice(o.d) + ' · ' : '') + (o.e.time ? fmtT(o.e.time) : 'All day') + ' · ' + esc(projName(o.e.p)) + (o.e.rep && o.e.rep !== 'none' ? ' · repeats ' + (o.e.rep === 'weekly' ? 'weekly' : 'monthly') : '') + (o.e.k === 'deadline' && !done ? ' · ' + leftTxt(n) : '');
+  const own = !o.e.tid && !String(o.e.id).startsWith('r:');
+  return '<div class="list-row" style="gap:10px">' + (o.e.k === 'deadline' ? '<button class="check' + (done ? ' on' : '') + '" data-a="calDone" data-id="' + o.e.id + '" data-d="' + o.d + '" aria-label="Mark ' + esc(o.e.t) + ' done" style="border-color:' + (done ? 'var(--good)' : 'var(--bad)') + '">' + (done ? ic('check', 14, 3, 'style="color:#fff"') : '') + '</button>' : '<i style="display:block;width:4px;align-self:stretch;margin:10px 11px;border-radius:2px;background:' + K.c + '"></i>') +
+    '<button class="tap grow" data-a="' + (own ? 'calEdit' : o.e.tid ? 'taskEdit' : 'calGoInbox') + '" data-id="' + (o.e.tid || o.e.id) + '" style="min-height:56px;display:flex;flex-direction:column;justify-content:center;gap:2px"><span class="b" style="font-size:15px;' + (done ? 'text-decoration:line-through;color:var(--muted)' : '') + '">' + esc(o.e.t) + '</span><span class="small muted">' + meta + '</span>' + (o.e.notes ? '<span class="small muted" style="white-space:pre-wrap">' + esc(o.e.notes) + '</span>' : '') + '</button>' +
+    '<span class="pill" style="background:' + K.bg + ';color:' + K.fg + '">' + K.l + '</span></div>';
+}
+function deadlinesSoon(days, limit) {
+  const nk = nowInfo().k;
+  return calRange(addD(nk, -7), addD(nk, days)).filter((o) => o.e.k === 'deadline' && !calDone(o)).slice(0, limit);
+}
+function dlBox(o, nk) {
+  const n = diffD(nk, o.d); const urgent = n <= 3;
+  return '<div class="list-row" style="gap:12px"><div style="width:46px;height:46px;flex:0 0 46px;border-radius:12px;background:var(--bad-bg);color:var(--bad-fg);display:flex;flex-direction:column;align-items:center;justify-content:center"><span style="font-size:10px;font-weight:700">' + MON[parseD(o.d).getMonth()].toUpperCase() + '</span><span style="font-size:17px;font-weight:800;line-height:1">' + parseD(o.d).getDate() + '</span></div>' +
+    '<button class="tap grow" data-a="calEdit" data-id="' + o.e.id + '" style="min-height:52px;display:flex;flex-direction:column;justify-content:center"><span class="b" style="font-size:15px">' + esc(o.e.t) + '</span><span class="small muted">' + DOW[parseD(o.d).getDay()] + ' · ' + (o.e.time ? fmtT(o.e.time) : 'All day') + ' · ' + esc(projName(o.e.p)) + '</span></button>' +
+    '<span class="pill" style="font-size:12px;padding:4px 9px;background:' + (n < 0 ? 'var(--bad)' : urgent ? 'var(--bad-bg)' : 'var(--soft)') + ';color:' + (n < 0 ? '#fff' : urgent ? 'var(--bad-fg)' : 'var(--ink)') + '">' + leftTxt(n) + '</span></div>';
+}
+function vCalendar() {
+  const nk = nowInfo().k; const sel = ui.calSel || nk; const ym = ui.calYm || sel.slice(0, 7); const view = ui.calView || 'month';
+  const [Y, M] = ym.split('-').map(Number);
+  const first = new Date(Y, M - 1, 1); const off = (first.getDay() + 6) % 7; const dim = new Date(Y, M, 0).getDate();
+  const cellsN = Math.ceil((off + dim) / 7) * 7; const gStart = dkey(new Date(Y, M - 1, 1 - off)); const gEnd = addD(gStart, cellsN - 1);
+  const occ = calRange(gStart, gEnd); const byDay = {}; occ.forEach((o) => (byDay[o.d] = byDay[o.d] || []).push(o));
+  const cells = [...Array(cellsN)].map((_, i) => {
+    const k = addD(gStart, i); const inM = k.slice(0, 7) === ym; const its = byDay[k] || []; const isS = k === sel, isT = k === nk;
+    const dots = []; its.forEach((o) => { const c = CALK[o.e.k].c; if (!dots.includes(c) && dots.length < 3) dots.push(c); });
+    return '<button data-a="calPick" data-k="' + k + '" aria-pressed="' + isS + '" aria-label="' + nice(k) + (its.length ? ', ' + its.length + ' entries' : '') + '" style="height:52px;border-radius:12px;border:2px solid ' + (isT && !isS ? 'var(--warn)' : 'transparent') + ';background:' + (isS ? 'var(--btn)' : 'transparent') + ';cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:0">' +
+      '<span style="font-size:15px;font-weight:' + (isS || isT ? 800 : 600) + ';color:' + (isS ? 'var(--btnInk)' : inM ? 'var(--ink)' : 'var(--line2)') + '">' + parseD(k).getDate() + '</span><span style="display:flex;gap:3px;height:6px">' + dots.map((c) => '<i style="display:block;width:6px;height:6px;border-radius:3px;background:' + c + '"></i>').join('') + '</span></button>';
+  }).join('');
+  const selOcc = calRange(sel, sel);
+  const ag = calRange(nk, addD(nk, 29)); const agBy = {}; ag.forEach((o) => (agBy[o.d] = agBy[o.d] || []).push(o));
+  const agenda = Object.keys(agBy).sort().map((k) => '<div style="display:flex;gap:12px;padding:10px 0;border-top:1px solid var(--line)"><div style="width:44px;flex:0 0 44px;text-align:center;color:' + (k === nk ? 'var(--warn)' : 'var(--ink)') + '"><div class="small xb">' + DOW[parseD(k).getDay()].toUpperCase() + '</div><div class="xb" style="font-size:22px;line-height:1.1">' + parseD(k).getDate() + '</div><div class="small muted">' + MON[parseD(k).getMonth()] + '</div></div><div class="grow col" style="gap:6px">' +
+    agBy[k].map((o) => { const K = CALK[o.e.k]; const own = !o.e.tid && !String(o.e.id).startsWith('r:'); return '<button class="tap" data-a="' + (own ? 'calEdit' : o.e.tid ? 'taskEdit' : 'calGoInbox') + '" data-id="' + (o.e.tid || o.e.id) + '" style="background:' + K.bg + ';border-radius:12px;padding:8px 10px;border-left:4px solid ' + K.c + ';' + (calDone(o) ? 'opacity:.55' : '') + '"><div class="b" style="font-size:14px;color:var(--ink)">' + esc(o.e.t) + '</div><div class="small muted">' + K.l + ' · ' + (o.e.time ? fmtT(o.e.time) : 'All day') + ' · ' + esc(projName(o.e.p)) + '</div></button>'; }).join('') + '</div></div>').join('');
+  const dl = deadlinesSoon(60, 6);
+  const mCount = occ.filter((o) => o.d.slice(0, 7) === ym).length;
+  return '<header class="row between"><div><h1>Calendar</h1><div class="sm muted">' + MONL[M - 1] + ' ' + Y + ' · ' + mCount + ' entr' + (mCount === 1 ? 'y' : 'ies') + '</div></div><div class="row" style="gap:6px"><button class="iconbtn" data-a="calMonth" data-n="-1" aria-label="Previous month">' + ic('back', 18) + '</button><button class="btn ghost sm" data-a="calToday" style="height:44px;border-radius:22px">Today</button><button class="iconbtn" data-a="calMonth" data-n="1" aria-label="Next month">' + ic('chev', 18) + '</button></div></header>' +
+    '<div class="seg">' + [['month', 'Month'], ['agenda', 'Agenda']].map(([v, l]) => '<button class="' + (view === v ? 'on' : '') + '" data-a="calView" data-v="' + v + '">' + l + '</button>').join('') + '</div>' +
+    (view === 'month' ?
+      '<section class="card" style="padding:12px 10px 14px;gap:6px"><div style="display:grid;grid-template-columns:repeat(7,minmax(0,1fr));text-align:center" class="small b muted"><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span></div><div style="display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:2px">' + cells + '</div>' +
+      '<div class="row wrap small b muted" style="gap:10px;padding:6px 4px 0">' + Object.values(CALK).map((K) => '<span class="row" style="gap:5px"><i style="display:block;width:8px;height:8px;border-radius:4px;background:' + K.c + '"></i>' + K.l + '</span>').join('') + '</div></section>' +
+      '<section class="card tight"><div class="head"><h2>' + (sel === nk ? 'Today · ' : '') + nice(sel) + '</h2><span class="sm muted">' + selOcc.length + ' entr' + (selOcc.length === 1 ? 'y' : 'ies') + '</span></div>' + (selOcc.map((o) => calRow(o, nk, false)).join('') || empty('Nothing planned. Add a deadline or plan for this day.')) +
+      '<button class="btn ghost full" data-a="calNew" style="border-style:dashed">+ Add to ' + DOW[parseD(sel).getDay()] + ' ' + parseD(sel).getDate() + '</button></section>'
+      : '<section class="card tight"><div class="small b muted">Next 30 days</div>' + (agenda || empty('Nothing in the next 30 days.')) + '</section>') +
+    '<section class="card tight"><div class="head"><h2>Deadlines coming up</h2><span class="sm muted">' + dl.length + '</span></div>' + (dl.map((o) => dlBox(o, nk)).join('') || empty('No deadlines. Tap + and choose Deadline.')) + '</section>' +
+    '<button class="fab" data-a="calNew" aria-label="Add to calendar">' + ic('plus', 26, 2.4) + '</button>';
+}
+function calSheet(e, d) {
+  e = e || { t: '', k: 'deadline', d: d, time: '', p: 'study', rem: 'day', rep: 'none', notes: '' };
+  const chip = (g, v, l, on) => '<button class="chip' + (on ? ' on' : '') + '" data-a="pickChip" data-group="' + g + '" data-v="' + v + '">' + l + '</button>';
+  return '<h2>' + (e.id ? 'Edit entry' : 'New entry') + '</h2>' +
+    '<label class="f">What<input id="ct" class="in" value="' + esc(e.t) + '" placeholder="e.g. ICT370 assignment due"></label>' +
+    '<div class="chips" id="ck" style="display:grid;grid-template-columns:repeat(3,1fr)">' + [['deadline', 'Deadline'], ['plan', 'Plan'], ['event', 'Event']].map(([v, l]) => chip('ck', v, l, e.k === v)).join('') + '</div>' +
+    '<div class="grid2"><label class="f">Date<input id="cd" type="date" class="in" value="' + esc(e.d) + '"></label><label class="f">Time (optional)<input id="ctm" type="time" class="in" value="' + esc(e.time || '') + '"></label></div>' +
+    '<div class="small b muted">Project</div><div class="chips" id="cp">' + PROJ.map(([v, l]) => chip('cp', v, l, e.p === v)).join('') + '</div>' +
+    '<div class="small b muted">Remind me</div><div class="chips" id="cr">' + REMS.map(([v, l]) => chip('cr', v, l, (e.rem || 'none') === v)).join('') + '</div>' +
+    '<div class="small b muted">Repeat</div><div class="chips" id="crp">' + REPS.map(([v, l]) => chip('crp', v, l, (e.rep || 'none') === v)).join('') + '</div>' +
+    '<label class="f">Notes (optional)<textarea id="cn" class="in" rows="2" placeholder="Links, steps, anything to remember">' + esc(e.notes || '') + '</textarea></label>' +
+    '<button class="btn full" data-a="calSave" data-id="' + (e.id || '') + '">Save to calendar</button>' +
+    (e.id ? '<button class="btn ghost full" data-a="calDel" data-id="' + e.id + '" style="color:var(--bad)">Delete' + (e.rep && e.rep !== 'none' ? ' (all repeats)' : '') + '</button>' : '') +
+    '<button class="btn ghost full" data-a="sheetClose">Cancel</button>';
 }
 
 /* =================== MONEY =================== */
@@ -754,8 +852,8 @@ function syncCard() {
 }
 
 /* =================== ROUTER / RENDER =================== */
-const ROUTES = { home: vHome, today: vToday, tasks: vTasks, money: vMoney, health: vHealth, habits: vHabits, reports: vReports, inbox: vInbox, settings: vSettings };
-const NAV = [['home', 'Home'], ['today', 'Today'], ['tasks', 'Tasks'], ['money', 'Money'], ['health', 'Health']];
+const ROUTES = { calendar: vCalendar, home: vHome, today: vToday, tasks: vTasks, money: vMoney, health: vHealth, habits: vHabits, reports: vReports, inbox: vInbox, settings: vSettings };
+const NAV = [['home', 'Home'], ['today', 'Today'], ['tasks', 'Tasks'], ['calendar', 'Calendar'], ['money', 'Money'], ['health', 'Health']];
 const NAVPARENT = { habits: 'today', reports: 'home', inbox: 'home', settings: 'home' };
 let route = 'home';
 function render(keepScroll) {
@@ -859,6 +957,25 @@ const A = {
     const txt = 'Shopping list:\n' + db.shop.items.filter((i) => !i.done).map((i) => '• ' + i.t).join('\n');
     try { if (navigator.share) { await navigator.share({ text: txt }); return; } await navigator.clipboard.writeText(txt); toast('List copied'); } catch (e) { if (e && e.name !== 'AbortError') toast('Could not share'); }
   },
+  calPick: (d) => { ui.calSel = d.k; ui.calYm = d.k.slice(0, 7); render(true); },
+  calMonth: (d) => { const [y, m] = (ui.calYm || (ui.calSel || nowInfo().k).slice(0, 7)).split('-').map(Number); const x = new Date(y, m - 1 + +d.n, 1); ui.calYm = dkey(x).slice(0, 7); render(true); },
+  calToday: () => { ui.calSel = nowInfo().k; ui.calYm = ui.calSel.slice(0, 7); render(true); },
+  calView: (d) => { ui.calView = d.v; render(true); },
+  calNew: () => openSheet(calSheet(null, ui.calSel || nowInfo().k)),
+  calEdit: (d) => { const e = (db.cal || []).find((x) => x.id === d.id); if (e) openSheet(calSheet(e)); },
+  calGoInbox: () => { ui.inboxTab = 'rem'; location.hash = '#inbox'; },
+  calJump: (d, el) => { ui.calSel = d.k; ui.calYm = d.k.slice(0, 7); },
+  calSave: (d) => {
+    const t = val('ct'); if (!t) return toast('What is it?'); const date = val('cd'); if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return toast('Pick a date');
+    db.cal = db.cal || [];
+    const e = d.id ? db.cal.find((x) => x.id === d.id) : { id: uid(), created: Date.now() };
+    if (e.d !== date || e.time !== val('ctm') || e.rem !== chipVal('cr')) e.notified = {};
+    Object.assign(e, { t, k: chipVal('ck') || 'plan', d: date, time: val('ctm'), p: chipVal('cp') || 'personal', rem: chipVal('cr') || 'none', rep: chipVal('crp') || 'none', notes: val('cn') });
+    if (!d.id) db.cal.push(e);
+    ui.calSel = date; ui.calYm = date.slice(0, 7); closeSheet(); commit(d.id ? 'Saved' : 'Added to ' + nice(date));
+  },
+  calDel: (d) => { if (!confirm('Delete this entry?')) return; db.cal = db.cal.filter((x) => x.id !== d.id); closeSheet(); commit('Deleted'); },
+  calDone: (d) => { const e = db.cal.find((x) => x.id === d.id); if (!e) return; e.doneOn = e.doneOn || {}; if (e.doneOn[d.d]) delete e.doneOn[d.d]; else e.doneOn[d.d] = true; commit(e.doneOn[d.d] ? 'Deadline done' : ''); },
   taskRange: (d) => { ui.taskRange = d.v; render(true); },
   taskProj: (d) => { ui.taskProj = d.v; render(true); },
   taskNew: () => openSheet(taskSheet()),
@@ -878,7 +995,7 @@ const A = {
   ideaAdd2: () => { const t = val('it'); if (!t) return; db.ideas.unshift({ id: uid(), t, d: nowInfo().k }); commit('Idea saved'); },
   ideaDel: (d) => { db.ideas = db.ideas.filter((x) => x.id !== d.id); commit(); },
   ideaToTask: (d) => { const i = db.ideas.find((x) => x.id === d.id); db.tasks.unshift({ id: uid(), t: i.t.slice(0, 140), proj: 'personal', st: 'todo', due: '', est: '', top: '', created: Date.now() }); db.ideas = db.ideas.filter((x) => x.id !== d.id); commit('Moved to Tasks'); },
-  inboxTab: (d) => { ui.inboxTab = d.tab; if (route === 'inbox') render(true); },
+  inboxTab: (d, el) => { ui.inboxTab = d.tab; if (route === 'inbox' && !(el && el.tagName === 'A')) render(true); },
   remAdd: () => { const t = val('rt'); if (!t) return toast('Write what to remember'); db.reminders.push({ id: uid(), t, when: val('rw'), done: false }); commit('Reminder added'); },
   remToggle: (d) => { const r = db.reminders.find((x) => x.id === d.id); r.done = !r.done; commit(); },
   remDel: (d) => { db.reminders = db.reminders.filter((x) => x.id !== d.id); commit(); },
@@ -994,7 +1111,7 @@ const CH = {
 document.addEventListener('click', (e) => {
   const el = e.target.closest('[data-a]'); if (!el || el.disabled) return;
   const fn = A[el.dataset.a]; if (!fn) return;
-  if (el.tagName === 'A' && el.dataset.a === 'inboxTab') { ui.inboxTab = el.dataset.tab; return; }
+  if (el.tagName === 'A') { fn(el.dataset, el); return; } // links with an action still navigate
   e.preventDefault(); fn(el.dataset, el);
 });
 document.addEventListener('change', (e) => { const el = e.target.closest('[data-c]'); if (el && CH[el.dataset.c]) CH[el.dataset.c](el.value, el.dataset, el); });
@@ -1024,6 +1141,18 @@ function checkReminders() {
   if (!db.settings.alerts || !('Notification' in window) || Notification.permission !== 'granted') return;
   const now = new Date(); let ch = false;
   db.reminders.forEach((r) => { if (!r.done && r.when && !r.notified && new Date(r.when) <= now) { r.notified = true; ch = true; const opts = { body: r.t, icon: 'icons/icon-192.png', badge: 'icons/icon-192.png', tag: r.id }; if (navigator.serviceWorker && navigator.serviceWorker.controller) navigator.serviceWorker.ready.then((reg) => reg.showNotification('Reminder', opts)); else new Notification('Reminder', opts); } });
+  const nk = dkey(now);
+  calRange(addD(nk, -1), addD(nk, 8)).forEach((o) => {
+    const e = o.e; if (!e.rem || e.rem === 'none' || e.tid || String(e.id).startsWith('r:') || calDone(o)) return;
+    e.notified = e.notified || {}; if (e.notified[o.d]) return;
+    const at = e.rem === 'same' ? o.d : e.rem === 'day' ? addD(o.d, -1) : addD(o.d, -7);
+    if (new Date(at + 'T09:00') > now) return;
+    e.notified[o.d] = true; ch = true;
+    const when = o.d === nk ? 'today' : o.d === addD(nk, 1) ? 'tomorrow' : nice(o.d);
+    const opts = { body: e.t + ' — ' + when + (e.time ? ' at ' + fmtT(e.time) : ''), icon: 'icons/icon-192.png', badge: 'icons/icon-192.png', tag: e.id + o.d };
+    const title = CALK[e.k].l + (e.k === 'deadline' ? ' coming up' : '');
+    if (navigator.serviceWorker && navigator.serviceWorker.controller) navigator.serviceWorker.ready.then((reg) => reg.showNotification(title, opts)); else new Notification(title, opts);
+  });
   if (ch) save();
 }
 
