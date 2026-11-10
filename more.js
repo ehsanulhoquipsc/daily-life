@@ -440,6 +440,100 @@ function savePR(id, v) {
   const isNew = v > P.v; if (isNew) { P.v = v; P.d = k; } db.wo.prs[id] = P; return isNew;
 }
 
+
+/* ========================== WORKOUT (simple, v2.0) ========================== */
+const WPARTS = [['chest', 'Chest'], ['back', 'Back'], ['shoulders', 'Shoulders'], ['arms', 'Arms'], ['core', 'Core'], ['legs', 'Legs'], ['glutes', 'Glutes'], ['calves', 'Calves']];
+const WPN = Object.fromEntries(WPARTS);
+const OLD_MAP = { quads: 'legs', lower: 'back' }; // older routine data → new body parts
+const WSHAPES = {
+  front: [['shoulders', 'M44 46 Q38 50 36 64 L50 64 L54 48 Z M106 46 Q112 50 114 64 L100 64 L96 48 Z'], ['chest', 'M55 48 L95 48 L97 74 Q75 82 53 74 Z'], ['arms', 'M34 66 L48 66 L46 112 L32 112 Z M102 66 L116 66 L118 112 L104 112 Z'], ['core', 'M56 78 Q75 86 94 78 L92 124 L58 124 Z'], ['legs', 'M56 128 L74 128 L72 182 L56 182 Z M76 128 L94 128 L94 182 L78 182 Z'], ['calves', 'M57 188 L71 188 L69 236 L59 236 Z M79 188 L93 188 L91 236 L81 236 Z']],
+  back: [['shoulders', 'M44 46 Q38 50 36 64 L50 64 L54 48 Z M106 46 Q112 50 114 64 L100 64 L96 48 Z'], ['back', 'M55 48 L95 48 L97 84 L53 84 Z M58 88 L92 88 L92 112 L58 112 Z'], ['arms', 'M34 66 L48 66 L46 112 L32 112 Z M102 66 L116 66 L118 112 L104 112 Z'], ['glutes', 'M57 115 L93 115 L94 134 Q75 140 56 134 Z'], ['legs', 'M56 138 L74 138 L72 182 L56 182 Z M76 138 L94 138 L94 182 L78 182 Z'], ['calves', 'M57 188 L71 188 L69 236 L59 236 Z M79 188 L93 188 L91 236 L81 236 Z']]
+};
+const WCOLORS = [['tent-bg', 'tent-fg'], ['doc-bg', 'doc-fg'], ['study-bg', 'study-fg'], ['pray-bg', 'pray-fg'], ['meal-bg', 'meal-fg'], ['house-bg', 'house'], ['warn-bg', 'warn-fg'], ['work-bg', 'work-fg']];
+const wLvl = (n) => n === 0 ? ['Not touched', 'var(--line)', 'var(--muted)'] : n <= 3 ? ['Light', '#A6DDB7', 'var(--good-fg)'] : n <= 7 ? ['Worked', '#3E8E5E', 'var(--good-fg)'] : ['Busy', '#1E5233', 'var(--good-fg)'];
+ui.ws = { open: '', draft: [['', ''], ['', '']], side: 'front', part: '', newParts: [] };
+function wsLogs() { return db.wo.logs = db.wo.logs || []; }
+function wsEx() { return db.wo.myEx = db.wo.myEx || []; }
+function wsWeek() {
+  const k = nowInfo().k; const from = addD(k, -6);
+  const load = {}, by = {}; WPARTS.forEach(([p]) => { load[p] = 0; by[p] = new Set(); });
+  const days = new Set(); let sets = 0;
+  wsLogs().filter((l) => l.d >= from && l.d <= k).forEach((l) => { const e = wsEx().find((x) => x.id === l.ex); const parts = e ? e.parts : (l.parts || []); parts.forEach((p) => { if (load[p] != null) { load[p] += l.sets.length; by[p].add(e ? e.name : l.name); } }); days.add(l.d); sets += l.sets.length; });
+  (db.wo.sessions || []).filter((x) => x.d >= from && x.d <= k).forEach((x) => { [...new Set((x.muscles || []).map((m) => OLD_MAP[m] || m))].forEach((p) => { if (load[p] != null) { load[p] += 3; by[p].add(x.title); } }); days.add(x.d); });
+  return { load, by, days: days.size, sets };
+}
+const setTxt = (sets) => { const reps = sets.map((x) => num(x[0])).filter((x) => x > 0); const mins = sets.reduce((a, x) => a + num(x[1]), 0); return (reps.length ? reps.join(', ') + ' reps' : '') + (reps.length && mins ? ' · ' : '') + (mins ? (Math.round(mins * 10) / 10) + ' min' : ''); };
+function vWorkoutSimple() {
+  const k = nowInfo().k; const W = wsWeek(); const S = ui.ws; const side = S.side;
+  const sel = WSHAPES[side].some((x) => x[0] === S.part) ? S.part : (WSHAPES[side].slice().sort((a, b) => W.load[a[0]] - W.load[b[0]])[0] || ['core'])[0];
+  const L = wLvl(W.load[sel]); const untouched = WPARTS.filter(([p]) => !W.load[p]).map(([, n]) => n);
+  const body = '<svg width="150" height="250" viewBox="0 0 150 250" role="img" aria-label="Body map, last 7 days" style="flex:0 0 150px"><circle cx="75" cy="20" r="15" fill="var(--line)"/><rect x="68" y="34" width="14" height="10" rx="4" fill="var(--line)"/>' +
+    WSHAPES[side].map(([p, d]) => '<path d="' + d + '" fill="' + wLvl(W.load[p])[1] + '" stroke="' + (p === sel ? 'var(--ink)' : 'var(--card)') + '" stroke-width="' + (p === sel ? 2.5 : 1.5) + '" data-a="wsPart" data-v="' + p + '" style="cursor:pointer"><title>' + WPN[p] + ': ' + W.load[p] + ' sets</title></path>').join('') + '</svg>';
+  const logs = wsLogs(); const ex = wsEx();
+  const lastFor = (id) => logs.filter((l) => l.ex === id).sort((a, b) => b.ts - a.ts)[0];
+  const agoTxt = (d) => { const n = diffD(d, k); return n === 0 ? 'today' : n === 1 ? 'yesterday' : n + ' days ago'; };
+  const exRows = ex.map((e, i) => {
+    const last = lastFor(e.id); const wk = logs.filter((l) => l.ex === e.id && l.d >= addD(k, -6)).reduce((a, l) => a + l.sets.length, 0); const isOpen = S.open === e.id;
+    const C = WCOLORS[i % WCOLORS.length];
+    let panel = '';
+    if (isOpen) {
+      const ph = last ? last.sets : [];
+      panel = '<div style="background:var(--soft);border-radius:14px;padding:12px;margin-bottom:10px;display:flex;flex-direction:column;gap:8px">' +
+        '<div style="display:grid;grid-template-columns:40px 1fr 1fr 36px;gap:6px" class="small b muted"><span>Set</span><span>Reps</span><span>Time (min)</span><span></span></div>' +
+        S.draft.map((d, j) => '<div style="display:grid;grid-template-columns:40px 1fr 1fr 36px;gap:6px;align-items:center"><span class="xb">' + (j + 1) + '</span>' +
+          '<input type="number" inputmode="numeric" class="in" data-c="wsDraft" data-j="' + j + '" data-f="0" value="' + esc(d[0]) + '" placeholder="' + esc(ph[j] && num(ph[j][0]) ? ph[j][0] : '—') + '" aria-label="Reps set ' + (j + 1) + '" style="height:42px;text-align:center;font-weight:800;font-size:16px;padding:0 6px">' +
+          '<input type="number" inputmode="decimal" step="0.5" class="in" data-c="wsDraft" data-j="' + j + '" data-f="1" value="' + esc(d[1]) + '" placeholder="' + esc(ph[j] && num(ph[j][1]) ? ph[j][1] : '—') + '" aria-label="Minutes set ' + (j + 1) + '" style="height:42px;text-align:center;font-weight:800;font-size:16px;padding:0 6px">' +
+          '<button class="del" data-a="wsDelSet" data-j="' + j + '" aria-label="Remove set ' + (j + 1) + '" style="width:36px;height:36px">' + ic('x', 14) + '</button></div>').join('') +
+        '<div class="grid2"><button class="btn ghost sm" data-a="wsAddSet" style="border-style:dashed">+ Add set</button><button class="btn sm" data-a="wsSave" data-id="' + e.id + '">Save today</button></div>' +
+        '<div class="small muted">Fill reps, time, or both (plank → time only, push-ups → reps only). Grey numbers are last time\'s.</div>' +
+        '<details><summary class="small muted" style="min-height:32px">Edit exercise</summary><div class="col" style="gap:8px;margin-top:6px"><input id="wsEn" class="in" value="' + esc(e.name) + '" aria-label="Exercise name"><div class="chips" id="wsEp">' + WPARTS.map(([p, n]) => '<button class="chip' + (e.parts.includes(p) ? ' on' : '') + '" data-a="toggleChip" data-v="' + p + '" aria-pressed="' + e.parts.includes(p) + '">' + n + '</button>').join('') + '</div><div class="grid2"><button class="btn ghost sm" data-a="wsEdit" data-id="' + e.id + '">Save changes</button><button class="btn ghost sm" data-a="wsDelEx" data-id="' + e.id + '" style="color:var(--bad)">Delete exercise</button></div></div></details></div>';
+    }
+    return '<div style="border-top:1px solid var(--line)"><button class="tap row" data-a="wsOpen" data-id="' + e.id + '" aria-expanded="' + isOpen + '" style="padding:10px 0;gap:12px"><span style="width:44px;height:44px;flex:0 0 44px;border-radius:12px;background:var(--' + C[0] + ');color:var(--' + C[1] + ');display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:800">' + esc(e.name.charAt(0).toUpperCase()) + '</span>' +
+      '<span class="grow"><span class="b" style="display:block;font-size:15px">' + esc(e.name) + '</span><span class="small muted" style="display:block">' + e.parts.map((p) => WPN[p]).join(' · ') + '</span><span class="small b" style="display:block;color:' + (last && diffD(last.d, k) <= 1 ? 'var(--good-fg)' : 'var(--muted)') + '">' + (last ? 'Last: ' + setTxt(last.sets) + ' · ' + agoTxt(last.d) : 'Not logged yet') + '</span></span>' +
+      '<span class="pill" style="background:var(--soft);color:var(--ink)">' + wk + ' set' + (wk === 1 ? '' : 's') + ' this wk</span></button>' + panel + '</div>';
+  }).join('');
+  const today = logs.filter((l) => l.d === k); const todaySets = today.reduce((a, l) => a + l.sets.length, 0);
+  return '<header class="row between" style="align-items:baseline"><h1>Workout</h1><div class="sm muted">' + nice(k) + '</div></header>' + hwSeg('workout') +
+    '<section class="card"><div class="row between" style="align-items:flex-start"><div><h2>Your body · last 7 days</h2><div class="small muted">' + W.sets + ' set' + (W.sets === 1 ? '' : 's') + ' across ' + W.days + ' day' + (W.days === 1 ? '' : 's') + '</div></div><div class="row" style="gap:4px">' + [['front', 'Front'], ['back', 'Back']].map(([v, l]) => '<button class="chip' + (side === v ? ' on' : '') + '" data-a="wsSide" data-v="' + v + '" style="height:32px">' + l + '</button>').join('') + '</div></div>' +
+      '<div class="row" style="gap:12px">' + body + '<div class="grow col" style="gap:8px;min-width:0"><div style="background:var(--soft);border-radius:12px;padding:10px 12px"><div class="small b muted">' + WPN[sel] + '</div><div class="xb" style="font-size:22px;color:' + L[2] + '">' + L[0] + '</div><div class="small muted" style="line-height:1.4">' + (W.load[sel] ? W.load[sel] + ' sets this week from ' + esc([...W.by[sel]].join(', ')) + '.' : 'No exercise worked this in the last 7 days.') + '</div></div>' +
+      '<div class="col small b" style="gap:5px">' + [['Not touched', 'var(--line)'], ['Light · 1–3 sets', '#A6DDB7'], ['Worked · 4–7 sets', '#3E8E5E'], ['Busy · 8+ sets', '#1E5233']].map(([t, c]) => '<span class="row" style="gap:6px"><i style="width:10px;height:10px;border-radius:3px;background:' + c + '"></i>' + t + '</span>').join('') + '</div></div></div>' +
+      (untouched.length ? '<div class="sm" style="background:var(--warn-bg);color:var(--warn-fg);border-radius:12px;padding:10px 12px;line-height:1.45"><b>Not touched this week:</b> ' + untouched.join(', ') + '.</div>' : '<div class="sm b" style="background:var(--good-bg);color:var(--good-fg);border-radius:12px;padding:10px 12px">Every body part got some work this week.</div>') + '</section>' +
+    '<section class="card tight"><div class="head"><h2>My exercises</h2><span class="sm muted">' + (ex.length ? 'tap to log' : '') + '</span></div>' + (exRows || empty('No exercises yet. Add your first one below.')) + '</section>' +
+    '<section class="card" style="border:2px dashed var(--line2)"><h2>+ Add an exercise</h2><label class="f">Name<input id="wsNew" class="in" placeholder="e.g. Pull-ups, Skipping, Bench press" maxlength="40"></label>' +
+      '<div class="small b muted">Which body parts does it work? <span style="font-weight:500">(pick one or more)</span></div><div class="chips" id="wsNp">' + WPARTS.map(([p, n]) => '<button class="chip" data-a="toggleChip" data-v="' + p + '">' + n + '</button>').join('') + '</div>' +
+      '<button class="btn full" data-a="wsAdd">Add exercise</button></section>' +
+    '<section class="card tight"><div class="head"><h2>Today</h2><span class="sm muted">' + todaySets + ' set' + (todaySets === 1 ? '' : 's') + '</span></div>' +
+      (today.map((l) => { const e = ex.find((x) => x.id === l.ex); return '<div class="list-row"><span class="grow b" style="font-size:14px">' + esc(e ? e.name : l.name) + '</span><span class="small muted">' + l.sets.length + ' set' + (l.sets.length === 1 ? '' : 's') + ' · ' + setTxt(l.sets) + '</span><button class="del" data-a="wsDelLog" data-id="' + l.id + '" aria-label="Delete">' + ic('trash', 16) + '</button></div>'; }).join('') || empty('Nothing logged yet today. Tap an exercise above.')) + '</section>' +
+    '<div class="small muted" style="text-align:center">Logging here also adds to Health → Exercise and ticks a habit called Gym or Workout.</div>';
+}
+Object.assign(A, {
+  wsSide: (d) => { ui.ws.side = d.v; ui.ws.part = ''; render(true); },
+  wsPart: (d) => { ui.ws.part = d.v; render(true); },
+  wsOpen: (d) => { ui.ws.open = ui.ws.open === d.id ? '' : d.id; ui.ws.draft = [['', ''], ['', '']]; render(true); },
+  wsAddSet: () => { const dr = ui.ws.draft; dr.push([dr.length ? dr[dr.length - 1][0] : '', '']); render(true); },
+  wsDelSet: (d) => { ui.ws.draft.splice(+d.j, 1); if (!ui.ws.draft.length) ui.ws.draft.push(['', '']); render(true); },
+  wsSave: (d) => {
+    const e = wsEx().find((x) => x.id === d.id); if (!e) return;
+    const sets = ui.ws.draft.map((x) => [Math.max(0, Math.round(num(x[0]))), Math.max(0, Math.round(num(x[1]) * 10) / 10)]).filter((x) => x[0] > 0 || x[1] > 0);
+    if (!sets.length) return toast('Enter reps or time for at least one set');
+    const k = nowInfo().k; wsLogs().push({ id: uid(), ex: e.id, name: e.name, parts: e.parts, d: k, ts: Date.now(), sets });
+    const mins = sets.reduce((a, x) => a + x[1], 0);
+    hday(k).ex.push({ type: 'other', name: e.name, amt: '', min: mins ? String(mins) : '', text: sets.length + ' set' + (sets.length === 1 ? '' : 's') + ' · ' + setTxt(sets) });
+    const g = customHabits().find((c) => /gym|workout|exercise|training/i.test(c.name) && c.days.includes(parseD(k).getDay())); if (g) day(k).h['c:' + g.id] = true;
+    ui.ws.open = ''; ui.ws.draft = [['', ''], ['', '']]; commit('Saved ' + e.name + ' · ' + setTxt(sets) + (g ? ' · ' + g.name + ' ticked' : ''));
+  },
+  wsAdd: () => {
+    const n = val('wsNew'); const parts = [...document.querySelectorAll('#wsNp .chip.on')].map((c) => c.dataset.v);
+    if (!n) return toast('Type the exercise name'); if (!parts.length) return toast('Pick at least one body part');
+    if (wsEx().some((x) => x.name.toLowerCase() === n.toLowerCase())) return toast('You already have ' + n);
+    const id = uid(); wsEx().push({ id, name: n, parts, created: Date.now() }); ui.ws.open = id; ui.ws.draft = [['', ''], ['', '']]; commit('Added ' + n + ' — log your first sets');
+  },
+  wsEdit: (d) => { const e = wsEx().find((x) => x.id === d.id); const n = val('wsEn'); const parts = [...document.querySelectorAll('#wsEp .chip.on')].map((c) => c.dataset.v); if (!n || !parts.length) return toast('Name and at least one body part'); e.name = n; e.parts = parts; commit('Saved'); },
+  wsDelEx: (d) => { const e = wsEx().find((x) => x.id === d.id); if (!e || !confirm('Delete ' + e.name + '? Its past logs stay in your history.')) return; db.wo.myEx = wsEx().filter((x) => x.id !== d.id); ui.ws.open = ''; commit('Deleted'); },
+  wsDelLog: (d) => { if (!confirm('Delete this log?')) return; db.wo.logs = wsLogs().filter((l) => l.id !== d.id); commit('Deleted'); }
+});
+Object.assign(CH, { wsDraft: (v, d) => { const r = ui.ws.draft[+d.j]; if (r) r[+d.f] = v; } }); // no re-render, so typing isn't interrupted
+
 /* ========================== MY OWN CATEGORIES ========================== */
 const colorKey = (c) => ['tent', 'doc', 'study', 'work', 'meal', 'rest', 'pray'].includes(c) ? c : c === 'personal' ? 'meal' : 'work';
 const CUSTOM_COLORS = ['#0F766E', '#B45309', '#7C3AED', '#BE185D', '#0369A1', '#4D7C0F', '#9F1239', '#475569'];
@@ -470,7 +564,7 @@ function catsCard() {
 }
 
 /* ========================== REGISTER ========================== */
-Object.assign(ROUTES, { shutdown: vShutdown, focus: vFocus, goals: vGoals, hstats: vHabitStats, workout: vWorkout, wplay: vWorkoutPlay });
+Object.assign(ROUTES, { shutdown: vShutdown, focus: vFocus, goals: vGoals, hstats: vHabitStats, workout: vWorkoutSimple, wplay: vWorkoutPlay });
 Object.assign(NAVPARENT, { shutdown: 'today', focus: 'home', goals: 'today', hstats: 'today', workout: 'health', wplay: 'health' });
 const _finish = A.finish;
 Object.assign(A, {

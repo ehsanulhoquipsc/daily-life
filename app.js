@@ -1,6 +1,6 @@
 'use strict';
 /* Daily Life — single-file app. Data lives on the phone (localStorage), works offline. */
-const VERSION = '1.9.0';
+const VERSION = '2.0.0';
 const KEY = 'dl:v1';
 const START = '2026-11-09'; // cycle 1, day 1
 
@@ -716,7 +716,7 @@ function vHealth() {
   // exercise week
   const wk = weekKeys(k);
   const exMin = (x) => peekH(x).ex.length;
-  const exHtml = h.ex.map((e, i) => { const t = EX.find((x) => x[0] === e.type) || EX[7]; return '<div class="list-row"><span class="grow"><span class="b" style="display:block;font-size:14px">' + esc(e.name || t[1]) + '</span><span class="small muted">' + esc(e.amt) + ' ' + t[2] + (e.min && t[2] !== 'min' ? ' · ' + e.min + ' min' : '') + '</span></span><button class="del" data-a="exDel" data-i="' + i + '" aria-label="Remove">' + ic('trash', 16) + '</button></div>'; }).join('');
+  const exHtml = h.ex.map((e, i) => { const t = EX.find((x) => x[0] === e.type) || EX[7]; return '<div class="list-row"><span class="grow"><span class="b" style="display:block;font-size:14px">' + esc(e.name || t[1]) + '</span><span class="small muted">' + (e.text ? esc(e.text) : esc(e.amt) + ' ' + t[2] + (e.min && t[2] !== 'min' ? ' · ' + e.min + ' min' : '')) + '</span></span><button class="del" data-a="exDel" data-i="' + i + '" aria-label="Remove">' + ic('trash', 16) + '</button></div>'; }).join('');
   // screen 7 days
   const scr = [...Array(7)].map((_, i) => addD(k, i - 6)).map((x) => [x, peekH(x).screen === '' ? null : num(peekH(x).screen)]);
   const smax = Math.max(S.screenLimit * 1.4, ...scr.map((x) => x[1] || 0));
