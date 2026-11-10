@@ -15,7 +15,7 @@ const firebaseConfig = {
 const DL = window.DL; const S = DL.SYNC;
 const META = 'dl:sync'; // { uid, h: { partName: hash } } — what we last sent/received
 const DEVICE = (() => { let d = localStorage.getItem('dl:device'); if (!d) { d = Math.random().toString(36).slice(2, 10); localStorage.setItem('dl:device', d); } return d; })();
-const CORE = ['settings', 'tasks', 'ideas', 'reminders', 'house', 'habits', 'periods', 'timer', 'shop', 'cal', 'goals', 'wo'];
+const CORE = ['settings', 'tasks', 'ideas', 'reminders', 'house', 'habits', 'periods', 'timer', 'shop', 'cal', 'goals', 'wo', 'cats'];
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);

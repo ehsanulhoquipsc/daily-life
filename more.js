@@ -132,9 +132,9 @@ function vFocus() {
   const byCat = {}; wk.forEach((x) => (peekDay(x).focus || []).forEach((s) => (byCat[s.cat] = (byCat[s.cat] || 0) + num(s.min))));
   const state = ui.focusDead ? 'dead' : doneNow ? 'done' : r ? (r.pausedAt ? 'paused' : 'running') : 'idle';
   const status = { dead: 'You gave up — the plant wilted. ' + (ui.focusDead || 0) + ' min still counted.', done: 'Done! Tap Finish to log ' + (r ? r.len : 0) + ' min to ' + esc(CAT[cat] || cat) + '.', paused: 'Paused', running: 'Stay with it — phone face down', idle: 'Ready when you are' }[state];
-  const catChips = FOCUS_CATS.concat(['work', 'personal']).map((c) => '<button class="chip' + (cat === c ? ' on' : '') + '" data-a="focusCat" data-v="' + c + '" style="background:' + (cat === c ? '#F2F1EE' : 'transparent') + ';color:' + (cat === c ? '#10140F' : '#F2F1EE') + ';border-color:rgba(255,255,255,.2)"' + (r ? ' disabled' : '') + '>' + esc(CAT[c]) + '</button>').join('');
+  const catChips = FOCUS_CATS.concat(['work', 'personal'], (db.cats.proj || []).map((x) => x.id)).map((c) => '<button class="chip' + (cat === c ? ' on' : '') + '" data-a="focusCat" data-v="' + c + '" style="background:' + (cat === c ? '#F2F1EE' : 'transparent') + ';color:' + (cat === c ? '#10140F' : '#F2F1EE') + ';border-color:rgba(255,255,255,.2)"' + (r ? ' disabled' : '') + '>' + esc(CAT[c]) + '</button>').join('');
   return '<div style="background:#10140F;color:#F2F1EE;margin:-18px -16px -110px;padding:calc(18px + env(safe-area-inset-top)) 18px 120px;min-height:100vh;display:flex;flex-direction:column;gap:16px">' +
-    '<header class="row between"><a href="#home" class="iconbtn" aria-label="Leave focus" style="background:rgba(255,255,255,.08);border:0;color:#F2F1EE">' + ic('x', 18, 2.4) + '</a><span class="pill" style="background:var(--' + (cat === 'personal' ? 'meal' : cat) + '-bg);color:var(--' + (cat === 'personal' ? 'meal' : cat) + '-fg);padding:6px 12px">' + esc(label) + '</span><span class="small b" style="color:#8F8D88">Session ' + (f.length + 1) + '</span></header>' +
+    '<header class="row between"><a href="#home" class="iconbtn" aria-label="Leave focus" style="background:rgba(255,255,255,.08);border:0;color:#F2F1EE">' + ic('x', 18, 2.4) + '</a><span class="pill" style="background:var(--' + colorKey(cat) + '-bg);color:var(--' + colorKey(cat) + '-fg);padding:6px 12px">' + esc(label) + '</span><span class="small b" style="color:#8F8D88">Session ' + (f.length + 1) + '</span></header>' +
     '<div style="display:flex;flex-direction:column;align-items:center;gap:6px">' + plantSvg(p, state === 'dead', 240) + '<div id="fclock" style="font-size:64px;font-weight:800;letter-spacing:-2px;font-variant-numeric:tabular-nums;line-height:1">' + (state === 'dead' ? '--:--' : pad(Math.floor(left / 60)) + ':' + pad(left % 60)) + '</div><div class="sm" style="color:#8F8D88;text-align:center">' + status + '</div></div>' +
     '<div class="grid2">' +
       (state === 'idle' || state === 'dead' ? '<button class="btn" data-a="focusStart" style="height:56px;background:#6FCF97;color:#10140F;font-size:16px;font-weight:800">' + (state === 'dead' ? 'Start next' : 'Start focus') + '</button>' :
@@ -148,7 +148,7 @@ function vFocus() {
       '<div class="small b" style="color:#8F8D88">TODAY\'S GARDEN</div><div class="row wrap" style="gap:8px">' + (f.length ? f.map((s) => '<div title="' + esc(s.label) + '" style="width:52px;height:60px;border-radius:12px;background:rgba(255,255,255,.05);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px">' + miniPlant(s.ok) + '<span style="font-size:10px;color:#8F8D88">' + s.min + 'm</span></div>').join('') : '<span class="sm" style="color:#8F8D88">Finish a session to grow your first plant.</span>') + '</div></section>' +
     '<section style="background:#1C211B;border-radius:20px;padding:16px;display:flex;flex-direction:column;gap:10px"><div class="row between" style="align-items:baseline"><h2>This week</h2><span class="small" style="color:#8F8D88">' + fmtDur(wMin.reduce((a, b) => a + b, 0)) + ' focused</span></div>' +
       '<div class="row" style="align-items:flex-end;gap:6px;height:96px">' + wk.map((x, i) => '<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px"><i style="display:block;width:100%;max-width:30px;height:' + Math.max(3, wMin[i] / wMax * 76) + 'px;border-radius:6px;background:' + (x === k ? '#6FCF97' : wMin[i] ? 'rgba(111,207,151,.45)' : 'rgba(255,255,255,.08)') + '"></i><span class="small b" style="color:' + (x === k ? '#F2F1EE' : '#8F8D88') + '">' + DOW[parseD(x).getDay()][0] + '</span></div>').join('') + '</div>' +
-      '<div class="row wrap small" style="gap:10px;color:#B5B2AB">' + (Object.entries(byCat).map(([c, m]) => '<span><b style="color:var(--' + (c === 'personal' ? 'meal' : c) + '-fg)">' + esc(CAT[c] || c) + '</b> ' + fmtDur(m) + '</span>').join('') || 'No sessions yet this week.') + '</div></section></div>';
+      '<div class="row wrap small" style="gap:10px;color:#B5B2AB">' + (Object.entries(byCat).map(([c, m]) => '<span><b style="color:var(--' + colorKey(c) + '-fg)">' + esc(CAT[c] || c) + '</b> ' + fmtDur(m) + '</span>').join('') || 'No sessions yet this week.') + '</div></section></div>';
 }
 function focusLog(min, ok) {
   const r = db.focusRun; if (!r) return; const k = nowInfo().k; const dd = day(k);
@@ -213,7 +213,7 @@ function goalSheet(g) {
   return '<h2>' + (isNew ? 'New goal' : 'Edit goal') + '</h2><label class="f">Goal<input id="gt" class="in" value="' + esc(g.t) + '" placeholder="e.g. Type 60 WPM"></label>' +
     '<div class="small b muted">How is progress measured?</div><div class="chips" id="gk">' + GOAL_KINDS.map(([v, l]) => '<button class="chip' + (g.kind === v ? ' on' : '') + '" data-a="goalKind" data-v="' + v + '">' + l + '</button>').join('') + '</div><div class="small muted" id="gkhelp">' + help[g.kind] + '</div>' +
     '<div id="ghab"' + (g.kind === 'habit' ? '' : ' hidden') + '><div class="small b muted" style="margin-bottom:6px">Fed by habit</div><div class="chips" id="gh">' + habs.map(([id, n]) => '<button class="chip' + (g.habit === id ? ' on' : '') + '" data-a="pickChip" data-group="gh" data-v="' + id + '">' + esc(n) + '</button>').join('') + '</div></div>' +
-    '<div id="gproj"' + (g.kind === 'deadlines' ? '' : ' hidden') + '><div class="small b muted" style="margin-bottom:6px">Project (optional)</div><div class="chips" id="gp">' + [['', 'Any']].concat(PROJ).map(([v, l]) => '<button class="chip' + ((g.proj || '') === v ? ' on' : '') + '" data-a="pickChip" data-group="gp" data-v="' + v + '">' + l + '</button>').join('') + '</div></div>' +
+    '<div id="gproj"' + (g.kind === 'deadlines' ? '' : ' hidden') + '><div class="small b muted" style="margin-bottom:6px">Project (optional)</div><div class="chips" id="gp">' + [['', 'Any']].concat(PROJ).map(([v, l]) => '<button class="chip' + ((g.proj || '') === v ? ' on' : '') + '" data-a="pickChip" data-group="gp" data-v="' + v + '">' + esc(l) + '</button>').join('') + catAddBtn('proj', 'gp') + '</div></div>' +
     '<div class="grid2"><label class="f" id="gfromw"' + (['num', 'wpm'].includes(g.kind) ? '' : ' hidden') + '>Starting from<input id="gfrom" type="number" inputmode="decimal" class="in" value="' + esc(g.from) + '" placeholder="e.g. 34"></label><label class="f">Target<input id="gtar" type="number" inputmode="decimal" class="in" value="' + esc(g.target) + '" placeholder="e.g. 60"></label></div>' +
     '<div class="grid2"><label class="f">Start<input id="gs" type="date" class="in" value="' + esc(g.start) + '"></label><label class="f">By<input id="ge" type="date" class="in" value="' + esc(g.end) + '"></label></div>' +
     '<label class="f" id="gunitw"' + (g.kind === 'num' ? '' : ' hidden') + '>Unit (optional)<input id="gu" class="in" value="' + esc(g.unit || '') + '" placeholder="followers, $, km…"></label>' +
@@ -320,7 +320,7 @@ function todaySuggestion(k) {
   return { area, why, from, done: false };
 }
 const PRDEF = [['push', 'Push-ups in one set', 'reps'], ['plank', 'Longest plank', 'sec'], ['squat', 'Squats in one set', 'reps'], ['burpee', 'Burpees in 5 min', 'reps']];
-const fmtPR = (id, v) => id === 'plank' ? Math.floor(v / 60) + ':' + pad(v % 60) : String(v);
+const fmtPR = (id, v) => { const d = PRDEF.find((p) => p[0] === id); return d && d[2] === 'sec' ? Math.floor(v / 60) + ':' + pad(v % 60) : String(v); };
 const LADDERS = {
   push: { label: 'Push-up', steps: [['Wall push-up', 20], ['Knee push-up', 15], ['Push-up', 15], ['Diamond push-up', 12], ['Archer push-up', 8], ['One-arm push-up', 1]] },
   squat: { label: 'Squat', steps: [['Assisted squat', 20], ['Bodyweight squat', 25], ['Split squat', 12], ['Bulgarian split squat', 10], ['Shrimp squat', 5], ['Pistol squat', 1]] },
@@ -426,18 +426,47 @@ function woAdvance() {
 function routineSheet() {
   return '<h2>Build my own routine</h2><label class="f">Name<input id="rn" class="in" placeholder="e.g. Quick push"></label>' +
     '<div class="small b muted">Area</div><div class="chips" id="ra">' + ['full', 'upper', 'lower', 'core', 'mobility'].map((a, i) => '<button class="chip' + (i === 0 ? ' on' : '') + '" data-a="pickChip" data-group="ra" data-v="' + a + '">' + AREAS[a][0] + '</button>').join('') + '</div>' +
-    '<div class="small b muted">Exercises (tap in order)</div><div class="chips" id="rex">' + Object.keys(EXL).map((e) => '<button class="chip" data-a="toggleChip" data-v="' + e + '">' + EXL[e][0] + '</button>').join('') + '</div>' +
+    '<div class="small b muted">Exercises (tap in order)</div><div class="chips" id="rex">' + Object.keys(EXL).map((e) => '<button class="chip" data-a="toggleChip" data-v="' + e + '">' + esc(EXL[e][0]) + '</button>').join('') + catAddBtn('wex', 'rex') + '</div>' +
     '<div class="grid2"><label class="f">Rounds<input id="rr" type="number" inputmode="numeric" class="in" value="3"></label><label class="f">Rest between (sec)<input id="rrest" type="number" inputmode="numeric" class="in" value="30"></label></div>' +
     '<button class="btn full" data-a="woBuildSave">Save routine</button><button class="btn ghost full" data-a="sheetClose">Cancel</button>';
 }
 function prSheet() {
-  return '<h2>Test a personal record</h2><div class="small b muted">Which one?</div><div class="chips" id="prk">' + PRDEF.map(([id, l], i) => '<button class="chip' + (i === 0 ? ' on' : '') + '" data-a="pickChip" data-group="prk" data-v="' + id + '">' + l + '</button>').join('') + '</div>' +
-    '<label class="f">Result (reps, or seconds for plank)<input id="prv" type="number" inputmode="numeric" class="in big"></label><button class="btn full" data-a="woPRSave">Save</button><button class="btn ghost full" data-a="sheetClose">Cancel</button>';
+  return '<h2>Test a personal record</h2><div class="small b muted">Which one?</div><div class="chips" id="prk">' + PRDEF.map(([id, l], i) => '<button class="chip' + (i === 0 ? ' on' : '') + '" data-a="pickChip" data-group="prk" data-v="' + id + '">' + esc(l) + '</button>').join('') + catAddBtn('pr', 'prk') + '</div>' +
+    '<label class="f">Result (reps, or seconds for timed tests)<input id="prv" type="number" inputmode="numeric" class="in big"></label><button class="btn full" data-a="woPRSave">Save</button><button class="btn ghost full" data-a="sheetClose">Cancel</button>';
 }
 function savePR(id, v) {
   v = Math.round(num(v)); if (!(v > 0)) return false; db.wo.prs = db.wo.prs || {}; const k = nowInfo().k;
   const P = db.wo.prs[id] || { v: 0, d: k, hist: [] }; P.hist = (P.hist || []).concat([{ d: k, v }]).slice(-30);
   const isNew = v > P.v; if (isNew) { P.v = v; P.d = k; } db.wo.prs[id] = P; return isNew;
+}
+
+/* ========================== MY OWN CATEGORIES ========================== */
+const colorKey = (c) => ['tent', 'doc', 'study', 'work', 'meal', 'rest', 'pray'].includes(c) ? c : c === 'personal' ? 'meal' : 'work';
+const CUSTOM_COLORS = ['#0F766E', '#B45309', '#7C3AED', '#BE185D', '#0369A1', '#4D7C0F', '#9F1239', '#475569'];
+const CAT_KINDS = { sector: 'Money sectors', ex: 'Exercise types', proj: 'Projects', mode: 'Speaking practice modes', wex: 'Workout exercises', pr: 'Record tests' };
+const BASE = { sect: SECT.slice(), ex: EX.slice(), proj: PROJ.slice(), prdef: PRDEF.slice(), exl: Object.keys(EXL).slice() };
+function applyCats() {
+  const C = (db.cats = Object.assign({ sector: [], ex: [], proj: [], mode: [], wex: [], pr: [] }, db.cats || {}));
+  // rebuild from the original lists every time; custom items go before "Other"
+  SECT.splice(0, SECT.length, ...BASE.sect.slice(0, -1), ...C.sector.map((x) => [x.id, x.l, x.c]), BASE.sect[BASE.sect.length - 1]);
+  EX.splice(0, EX.length, ...BASE.ex.slice(0, -1), ...C.ex.map((x) => [x.id, x.l, x.u || 'min']), BASE.ex[BASE.ex.length - 1]);
+  PROJ.splice(0, PROJ.length, ...BASE.proj, ...C.proj.map((x) => [x.id, x.l])); C.proj.forEach((x) => (CAT[x.id] = x.l));
+  PRDEF.splice(0, PRDEF.length, ...BASE.prdef, ...C.pr.map((x) => [x.id, x.l, x.u || 'reps']));
+  Object.keys(EXL).forEach((k) => { if (!BASE.exl.includes(k)) delete EXL[k]; }); C.wex.forEach((x) => (EXL[x.id] = [x.l, x.type || 'reps', num(x.amt, 10), x.mus ? [x.mus] : []]));
+}
+// "+ New" button at the end of a chip group; opens a small inline form without losing what you typed elsewhere
+function catAddBtn(kind, group) { return '<button class="chip" data-a="catAdd" data-kind="' + kind + '" data-group="' + group + '" style="border-style:dashed;color:var(--muted)">+ New</button>'; }
+function catForm(kind, group) {
+  const extra = {
+    ex: '<select class="in" id="cfu" style="width:auto;height:36px;padding:0 8px"><option value="min">min</option><option value="reps">reps</option><option value="km">km</option><option value="steps">steps</option><option value="sets">sets</option></select>',
+    pr: '<select class="in" id="cfu" style="width:auto;height:36px;padding:0 8px"><option value="reps">reps</option><option value="sec">seconds</option></select>',
+    wex: '<select class="in" id="cft" style="width:auto;height:36px;padding:0 8px"><option value="reps">reps</option><option value="time">seconds</option></select><input id="cfa" type="number" inputmode="numeric" class="in" value="10" aria-label="Amount" style="width:58px;height:36px;padding:0 6px;text-align:center"><select class="in" id="cfm" style="width:auto;height:36px;padding:0 8px" aria-label="Works"><option value="">works…</option>' + Object.keys(MUS_NAME).map((m) => '<option value="' + m + '">' + MUS_NAME[m] + '</option>').join('') + '</select>'
+  }[kind] || '';
+  return '<span class="catform" data-kind="' + kind + '" data-group="' + group + '" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;width:100%"><input id="cfn" class="in" placeholder="' + { sector: 'e.g. Rent', ex: 'e.g. Swimming', proj: 'e.g. Uni assignment', mode: 'e.g. With a friend', wex: 'e.g. Pull-ups', pr: 'e.g. Pull-ups in one set' }[kind] + '" style="flex:1 1 140px;height:36px" maxlength="40" data-enter="catSave">' + extra + '<button class="chip on" data-a="catSave" style="height:36px">Save</button><button class="chip" data-a="catCancel" aria-label="Cancel" style="height:36px">✕</button></span>';
+}
+function catsCard() {
+  const C = db.cats || {}; const rows = Object.keys(CAT_KINDS).filter((k) => (C[k] || []).length).map((k) => '<div><div class="small b muted" style="margin-bottom:6px">' + CAT_KINDS[k] + '</div><div class="chips">' + C[k].map((x) => '<span class="chip" style="display:inline-flex;align-items:center;gap:4px;padding-right:4px">' + esc(x.l) + (x.u ? ' <span class="small muted">' + esc(x.u) + '</span>' : '') + '<button class="del" data-a="catDel" data-kind="' + k + '" data-id="' + x.id + '" aria-label="Remove ' + esc(x.l) + '" style="width:28px;height:28px">' + ic('x', 14) + '</button></span>').join('') + '</div></div>').join('');
+  return '<section class="card"><h2>My categories</h2><div class="small muted">Your own sectors, projects, exercise types and more. Add them with <b>+ New</b> next to any list. Removing one keeps your old entries.</div>' + (rows || '<div class="small muted">None yet.</div>') + '</section>';
 }
 
 /* ========================== REGISTER ========================== */
@@ -514,6 +543,27 @@ Object.assign(A, {
   woLadderLog: () => { const sets = [0, 1, 2].map((j) => val('ls' + j)).map((x) => (x === '' ? null : num(x))); db.wo.ladderLog = db.wo.ladderLog || {}; db.wo.ladderLog[ui.woLad] = sets; const L = LADDERS[ui.woLad]; const lvl = (db.wo.ladders || {})[ui.woLad] || 0; const ok = sets.filter((x) => x != null && x >= L.steps[lvl][1]).length; commit(ok >= 3 ? 'All 3 sets hit — unlock the next step!' : 'Saved · ' + ok + ' of 3 on target'); },
   woLevelUp: () => { db.wo.ladders = db.wo.ladders || {}; const L = LADDERS[ui.woLad]; db.wo.ladders[ui.woLad] = Math.min(L.steps.length - 1, (db.wo.ladders[ui.woLad] || 0) + 1); db.wo.ladderLog[ui.woLad] = []; commit('Unlocked ' + L.steps[db.wo.ladders[ui.woLad]][0] + '!'); }
 });
+Object.assign(A, {
+  catAdd: (d, el) => { const box = el.parentNode; const old = box.querySelector('.catform'); if (old) old.remove(); el.style.display = 'none'; el.insertAdjacentHTML('afterend', catForm(d.kind, d.group)); const i = box.querySelector('#cfn'); if (i) i.focus(); },
+  catCancel: (d, el) => { const f = el.closest('.catform'); const b = f.parentNode.querySelector('[data-a=catAdd]'); f.remove(); if (b) b.style.display = ''; },
+  catSave: (d, el) => {
+    const f = (el && el.closest && el.closest('.catform')) || document.querySelector('.catform'); if (!f) return;
+    const kind = f.dataset.kind, group = f.dataset.group; const l = (f.querySelector('#cfn').value || '').trim(); if (!l) return toast('Type a name first');
+    const C = db.cats; const list = (C[kind] = C[kind] || []);
+    const exist = list.find((x) => x.l.toLowerCase() === l.toLowerCase());
+    const id = exist ? exist.id : 'u' + uid(); const g = (sel) => { const x = f.querySelector(sel); return x ? x.value : ''; };
+    if (!exist) { const item = { id, l }; if (kind === 'sector') item.c = CUSTOM_COLORS[list.length % CUSTOM_COLORS.length]; if (kind === 'ex' || kind === 'pr') item.u = g('#cfu'); if (kind === 'wex') { item.type = g('#cft') || 'reps'; item.amt = Math.max(1, Math.round(num(g('#cfa'), 10))); item.mus = g('#cfm'); } list.push(item); }
+    applyCats(); save();
+    const box = f.parentNode; const v = kind === 'mode' ? l : id; const toggle = group === 'rex';
+    const label = kind === 'sector' ? '<i style="display:inline-block;width:8px;height:8px;border-radius:4px;background:' + (list.find((x) => x.id === id).c) + ';margin-right:6px"></i>' + esc(l) : esc(l);
+    let chip = box.querySelector('[data-v="' + (window.CSS && CSS.escape ? CSS.escape(v) : v) + '"]');
+    if (!chip) { f.insertAdjacentHTML('beforebegin', '<button class="chip" data-a="' + (toggle ? 'toggleChip' : 'pickChip') + '" data-group="' + group + '" data-v="' + esc(v) + '">' + label + '</button>'); chip = f.previousElementSibling; }
+    if (toggle) { chip.classList.add('on'); chip.setAttribute('aria-pressed', 'true'); } else A.pickChip({ group }, chip);
+    const b = box.querySelector('[data-a=catAdd]'); f.remove(); if (b) b.style.display = '';
+    toast(exist ? 'Selected ' + l : 'Saved “' + l + '” — it\'s there next time');
+  },
+  catDel: (d) => { const C = db.cats; const x = (C[d.kind] || []).find((i) => i.id === d.id); if (!x || !confirm('Remove “' + x.l + '”? Old entries keep their data.')) return; C[d.kind] = C[d.kind].filter((i) => i.id !== d.id); if (d.kind === 'proj') delete CAT[d.id]; applyCats(); commit('Removed'); }
+});
 Object.assign(CH, {
   sdDestSel: (v, d) => { if (v) { ui.sd.dest[d.key] = v; render(true); } },
   sdText: (v, d) => { day(d.k)[d.f] = v.trim(); save(); },
@@ -539,4 +589,5 @@ setInterval(() => {
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && route === 'wplay' && ui.wp && !ui.wp.finished) keepAwake(true); });
 // ensure the new data exists for older saves, then draw the current page
 db.goals = db.goals || []; db.wo = db.wo || {};
+const _render = render; render = function (keep) { applyCats(); return _render(keep); };
 render();
