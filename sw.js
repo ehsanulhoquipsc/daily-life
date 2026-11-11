@@ -1,6 +1,6 @@
 // Daily Life service worker: cache the app shell so it opens with no internet.
-const CACHE = 'dl-v2.1.0';
-const SHELL = ['./', 'index.html', 'app.css', 'app.js', 'more.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'sync.js', 'vendor/firebase-app.js', 'vendor/firebase-auth.js', 'vendor/firebase-firestore.js'];
+const CACHE = 'dl-v2.2.0';
+const SHELL = ['./', 'index.html', 'app.css', 'app.js', 'more.js', 'plan.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'sync.js', 'vendor/firebase-app.js', 'vendor/firebase-auth.js', 'vendor/firebase-firestore.js'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
