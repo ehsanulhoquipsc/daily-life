@@ -534,6 +534,178 @@ Object.assign(A, {
 });
 Object.assign(CH, { wsDraft: (v, d) => { const r = ui.ws.draft[+d.j]; if (r) r[+d.f] = v; } }); // no re-render, so typing isn't interrupted
 
+
+/* ========================== FOOD BY TIME OF DAY + ENERGY (v2.1) ========================== */
+const FSLOTS = [['early', 'Early', 240, 480], ['morning', 'Morning', 480, 660], ['midday', 'Midday', 660, 900], ['afternoon', 'Afternoon', 900, 1080], ['evening', 'Evening', 1080, 1260], ['night', 'Night', 1260, 1680]];
+const FSMID = { early: 360, morning: 570, midday: 780, afternoon: 990, evening: 1170, night: 1320 };
+const fSlotOf = (m) => (FSLOTS.find((z) => m >= z[2] && m < z[3]) || FSLOTS[m < 240 ? 0 : 5])[0];
+const hm12 = (m) => { m = ((m % 1440) + 1440) % 1440; const h = Math.floor(m / 60), mm = m % 60; return (h % 12 || 12) + ':' + String(mm).padStart(2, '0') + (h < 12 ? ' am' : ' pm'); };
+const hShort = (m) => { m = m % 1440; const h = Math.floor(m / 60); return (h % 12 || 12) + (h < 12 ? 'a' : 'p'); };
+const enCol = (v) => !v ? 'var(--line)' : v < 2.5 ? '#E8A23B' : v < 3.5 ? '#A6DDB7' : '#3E8E5E';
+const NUDGES = [690, 945, 1350]; // 11:30 am, 3:45 pm, 10:30 pm
+ui.fslot = null;
+function workBlocks(k) {
+  return sched(k).blocks.filter((b) => b.e && !['pray', 'rest', 'meal'].includes(b.c)).map((b) => { const a = ADJ(toM(b.s)); let e = ADJ(toM(b.e)); if (e <= a) e += 1440; return [a, e, b.l.replace(' · main block', '')]; });
+}
+function wakeMin(k) { const h = peekH(k); if (h.wake) return ADJ(toM(h.wake)); const w = sched(k).blocks.find((b) => /wake|plan & read/i.test(b.l)); return w ? ADJ(toM(w.s)) : 450; }
+// work stretches with 4h+ since the last food, up to `until`
+function lowFuel(k, until) {
+  const h = peekH(k); const times = h.food.filter((f) => f.t != null).map((f) => f.t).sort((a, b) => a - b); const out = [];
+  if (!times.length) return out;
+  workBlocks(k).forEach(([ws, we, wn]) => {
+    const end = Math.min(we, until); if (end <= ws) return;
+    let last = times.filter((t) => t <= ws).pop(); if (last == null) last = wakeMin(k);
+    const pts = [last].concat(times.filter((t) => t > ws && t < end), [end]);
+    for (let i = 0; i < pts.length - 1; i++) { const g0 = Math.max(ws, pts[i] + 240); if (pts[i + 1] - pts[i] >= 240 && pts[i + 1] > g0) out.push({ wn, from: g0, to: pts[i + 1], since: pts[i], lowTap: (h.en || []).some(([t, v]) => t >= g0 && t <= pts[i + 1] && v <= 2) }); }
+  });
+  return out;
+}
+function foodCard(k) {
+  const h = peekH(k); const S = db.settings; const N = nowInfo(); const isToday = k === N.k;
+  const kcal = h.food.reduce((a, f) => a + num(f.kcal), 0), prot = h.food.reduce((a, f) => a + num(f.p), 0);
+  const sk = {}; FSLOTS.forEach(([z]) => (sk[z] = 0)); h.food.forEach((f) => { if (f.t != null) sk[fSlotOf(f.t)] += num(f.kcal); });
+  const max = Math.max(500, ...Object.values(sk)); const W = workBlocks(k); const en = h.en || [];
+  const pick = ui.fslot || fSlotOf(isToday ? N.m : 780);
+  const cols = FSLOTS.map(([z, l, a, b]) => {
+    const ov = W.reduce((acc, [s2, e2]) => acc + Math.max(0, Math.min(b, e2) - Math.max(a, s2)), 0);
+    const ev = en.filter(([t]) => t >= a && t < b).map((x) => x[1]); const av = ev.length ? ev.reduce((p, q) => p + q, 0) / ev.length : 0;
+    return { z, l, a, b, ov, av };
+  });
+  const chart = '<div class="small b muted">When you ate</div><div style="display:grid;grid-template-columns:repeat(6,1fr);gap:6px;align-items:end;height:116px">' +
+    cols.map((c) => '<div style="height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:4px"><span class="small xb" style="color:' + (sk[c.z] ? 'var(--meal-fg)' : 'var(--muted)') + '">' + (sk[c.z] || '—') + '</span><i style="display:block;width:100%;height:' + Math.max(4, Math.round((sk[c.z] / max) * 88)) + 'px;border-radius:8px 8px 4px 4px;background:' + (sk[c.z] ? 'var(--meal)' : 'var(--soft)') + '"></i></div>').join('') + '</div>' +
+    '<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:6px;text-align:center">' + cols.map((c) => '<div style="display:flex;flex-direction:column;gap:3px;align-items:center;min-width:0"><span style="font-size:11px;font-weight:700">' + c.l + '</span><span style="font-size:10px" class="muted">' + hShort(c.a) + '–' + hShort(c.b) + '</span><span style="width:100%;height:6px;border-radius:3px;background:var(--soft);overflow:hidden"><i style="display:block;height:100%;width:' + Math.round((c.ov / (c.b - c.a)) * 100) + '%;background:var(--work)"></i></span><span style="font-size:10px" class="muted">' + (c.ov ? (c.ov >= 60 ? Math.round(c.ov / 6) / 10 + 'h work' : c.ov + 'm work') : 'no work') + '</span><span title="Energy" style="width:12px;height:12px;border-radius:6px;background:' + enCol(c.av) + '"></span></div>').join('') + '</div>' +
+    '<div class="row" style="gap:12px;flex-wrap:wrap;font-size:11px"><span class="row muted" style="gap:4px"><i style="width:10px;height:10px;border-radius:3px;background:var(--meal)"></i>kcal</span><span class="row muted" style="gap:4px"><i style="width:10px;height:6px;border-radius:3px;background:var(--work)"></i>work time</span><span class="row muted" style="gap:4px"><i style="width:10px;height:10px;border-radius:5px;background:#3E8E5E"></i>energy (grey = not logged)</span></div>';
+  const flags = lowFuel(k, isToday ? N.m : 1680).map((f) => '<div class="sm" style="background:var(--warn-bg);color:var(--warn-fg);border-radius:12px;padding:10px 12px;line-height:1.45"><b>Low fuel · ' + esc(f.wn) + ', ' + hm12(f.from) + '–' + hm12(f.to) + '</b><br>You were working with nothing eaten since ' + hm12(f.since) + (f.lowTap ? ' — and you rated your energy 2/5 or lower then.' : '.') + '</div>').join('');
+  const idx = h.food.map((f, i) => [f, i]);
+  const row = ([f, i]) => '<div class="list-row"><span class="small b muted" style="width:56px">' + (f.t != null ? hm12(f.t).replace(' ', '') : '') + '</span><span class="grow b" style="font-size:14px">' + esc(f.name) + '</span><span class="small muted">' + num(f.kcal) + ' kcal · ' + num(f.p) + ' g</span><button class="del" data-a="foodDel" data-i="' + i + '" aria-label="Remove ' + esc(f.name) + '">' + ic('trash', 16) + '</button></div>';
+  const groups = FSLOTS.map(([z, l]) => [l, idx.filter(([f]) => f.t != null && fSlotOf(f.t) === z).sort((a, b) => a[0].t - b[0].t)]).concat([['No time', idx.filter(([f]) => f.t == null)]]).filter((g) => g[1].length)
+    .map(([l, items]) => '<div><div class="row between small b muted" style="padding:6px 0 2px"><span>' + l + '</span><span>' + items.reduce((a, [f]) => a + num(f.kcal), 0) + ' kcal</span></div>' + items.map(row).join('') + '</div>').join('');
+  // recent foods (last 14 days, most frequent first)
+  const freq = {}; for (let i = 0; i < 14; i++) peekH(addD(k, -i)).food.forEach((f) => { const key = f.name.trim().toLowerCase(); if (!key) return; freq[key] = freq[key] || { f, n: 0 }; freq[key].n++; });
+  const recent = Object.values(freq).sort((a, b) => b.n - a.n).slice(0, 6);
+  return '<section class="card"><div class="head"><h2>Food</h2><span class="sm muted">' + kcal + ' / ' + S.kcalGoal + ' kcal · ' + prot + ' / ' + S.proteinGoal + ' g</span></div><div class="bar"><i style="width:' + Math.min(100, Math.round((kcal / (S.kcalGoal || 1)) * 100)) + '%;background:var(--meal)"></i></div>' +
+    chart + flags + groups +
+    '<div style="background:var(--soft);border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:10px">' +
+    (recent.length ? '<div class="small b muted">Eat this again? <span style="font-weight:500">(one tap adds it to the slot below)</span></div><div class="chips">' + recent.map((r) => '<button class="chip" data-a="foodAgain" data-n="' + esc(r.f.name) + '" data-k="' + num(r.f.kcal) + '" data-p="' + num(r.f.p) + '" style="background:var(--meal-bg);color:var(--meal-fg);border-color:transparent">+ ' + esc(r.f.name) + '</button>').join('') + '</div>' : '') +
+    '<label class="f">What you ate<input id="fn" class="in" placeholder="e.g. Chicken rice" data-enter="foodAdd"></label><div class="grid2"><label class="f">kcal<input id="fk" type="number" inputmode="numeric" class="in"></label><label class="f">Protein (g)<input id="fp" type="number" inputmode="numeric" class="in"></label></div>' +
+    '<div class="small b muted">When? <span style="font-weight:500">(picked from the clock — change it if you\'re logging later)</span></div><div id="fslots" style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px">' +
+    FSLOTS.map(([z, l, a, b]) => '<button class="chip' + (pick === z ? ' on' : '') + '" data-a="fSlot" data-v="' + z + '" aria-pressed="' + (pick === z) + '" style="height:50px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:0 4px;border-radius:12px;min-width:0"><span style="display:block;font-size:13px;font-weight:700">' + l + '</span><span style="display:block;font-size:10px;opacity:.75">' + hShort(a) + '–' + hShort(b) + (isToday && z === fSlotOf(N.m) ? ' · now' : '') + '</span></button>').join('') + '</div>' +
+    '<label class="row between small b muted" style="gap:8px">Exact time (optional)<input id="ftm" type="time" class="in" style="width:auto;height:40px" data-c="fTime"></label>' +
+    '<button class="btn full" data-a="foodAdd">Add food</button></div></section>';
+}
+function energyCard(k) {
+  const h = peekH(k); const en = h.en || []; const on = db.settings.nudge !== false;
+  const tone = (n) => n <= 2 ? ['var(--warn-bg)', 'var(--warn-fg)'] : n === 3 ? ['var(--soft)', 'var(--ink)'] : ['var(--good-bg)', 'var(--good-fg)'];
+  return '<section class="card"><div class="head"><h2>Energy right now</h2><span class="sm muted">' + en.length + ' today</span></div><div class="small muted" style="line-height:1.4">Tap 2–4 times a day (mid-Venture, after lunch, before Venture 2). Each tap is saved with the time, so it can be matched to what you ate and what you were doing.</div>' +
+    '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px">' + [[1, 'Empty'], [2, 'Low'], [3, 'OK'], [4, 'Good'], [5, 'Full']].map(([n, t]) => { const c = tone(n); return '<button class="tap" data-a="enTap" data-n="' + n + '" style="height:54px;border-radius:12px;border:1px solid var(--line2);background:' + c[0] + ';color:' + c[1] + ';display:flex;flex-direction:column;align-items:center;justify-content:center"><span class="xb" style="font-size:17px">' + n + '</span><span style="font-size:10px;font-weight:600">' + t + '</span></button>'; }).join('') + '</div>' +
+    '<div class="row between" style="gap:10px;background:var(--soft);border-radius:12px;padding:8px 10px"><span class="small" style="line-height:1.4"><b>Nudge me</b><br><span class="muted">11:30 am · 3:45 pm · 10:30 pm (mid-work times)</span></span><button class="switch' + (on ? ' on' : '') + '" data-a="nudge" role="switch" aria-checked="' + on + '" aria-label="Energy nudges"></button></div>' +
+    (en.length ? '<div class="chips">' + en.map(([t, n], i) => { const c = tone(n); return '<button class="chip" data-a="enDel" data-i="' + i + '" aria-label="Remove ' + hm12(t) + ' energy" style="background:' + c[0] + ';color:' + c[1] + ';border-color:transparent">' + hm12(t) + ' · ' + n + '/5 ✕</button>'; }).join('') + '</div>' : '') + '</section>';
+}
+const enAvg = (h) => { const en = h.en || []; return en.length ? Math.round((en.reduce((a, x) => a + x[1], 0) / en.length) * 10) / 10 : (h.energy || 0); };
+function setEnergy(h) { h.energy = (h.en || []).length ? enAvg({ en: h.en }) : 0; }
+Object.assign(A, {
+  fSlot: (d) => { ui.fslot = d.v; document.querySelectorAll('#fslots .chip').forEach((c) => { const on = c.dataset.v === d.v; c.classList.toggle('on', on); c.setAttribute('aria-pressed', on); }); const t = document.getElementById('ftm'); if (t) t.value = ''; },
+  foodAdd: () => {
+    const n = val('fn'); if (!n) return toast('What did you eat?');
+    const N = nowInfo(); const tv = val('ftm'); const pick = ui.fslot || fSlotOf(N.m);
+    const t = tv ? ADJ(toM(tv)) : pick === fSlotOf(N.m) ? N.m : FSMID[pick];
+    hday(N.k).food.push({ name: n, kcal: num(val('fk')), p: num(val('fp')), t }); ui.fslot = null;
+    commit('Added to ' + FSLOTS.find((z) => z[0] === fSlotOf(t))[1].toLowerCase() + ' · ' + hm12(t));
+  },
+  foodAgain: (d) => { const N = nowInfo(); const pick = ui.fslot || fSlotOf(N.m); const t = pick === fSlotOf(N.m) ? N.m : FSMID[pick]; hday(N.k).food.push({ name: d.n, kcal: num(d.k), p: num(d.p), t }); ui.fslot = null; commit('Added ' + d.n + ' · ' + hm12(t)); },
+  enTap: (d) => { const N = nowInfo(); const h = hday(N.k); h.en = h.en || []; h.en.push([N.m, +d.n]); setEnergy(h); commit('Energy ' + d.n + '/5 at ' + hm12(N.m)); },
+  enDel: (d) => { const h = hday(nowInfo().k); (h.en || []).splice(+d.i, 1); setEnergy(h); commit(); },
+  nudge: async () => {
+    const S = db.settings; const on = S.nudge !== false;
+    if (!on && 'Notification' in window && Notification.permission === 'default') { try { await Notification.requestPermission(); } catch (e) { /* ignore */ } }
+    S.nudge = !on; commit(S.nudge ? 'Energy nudges on' : 'Energy nudges off');
+  }
+});
+Object.assign(CH, { fTime: (v) => { if (!v) return; const z = fSlotOf(ADJ(toM(v))); ui.fslot = z; document.querySelectorAll('#fslots .chip').forEach((c) => { const on = c.dataset.v === z; c.classList.toggle('on', on); c.setAttribute('aria-pressed', on); }); } });
+// nudges: notification if allowed, otherwise an in-app toast; once per nudge per day, skipped if you already tapped within the hour
+setInterval(() => {
+  if (db.settings.nudge === false) return;
+  const N = nowInfo(); const h = peekH(N.k);
+  NUDGES.forEach((t) => {
+    if (N.m < t || N.m > t + 30) return; const key = 'dl:nudge:' + N.k + ':' + t; if (localStorage.getItem(key)) return;
+    localStorage.setItem(key, '1'); if ((h.en || []).some(([x]) => Math.abs(x - t) <= 60)) return;
+    const body = 'How is your energy right now? Tap 1–5 in Health.';
+    if ('Notification' in window && Notification.permission === 'granted') { const opts = { body, icon: 'icons/icon-192.png', badge: 'icons/icon-192.png', tag: 'energy' + t }; if (navigator.serviceWorker && navigator.serviceWorker.controller) navigator.serviceWorker.ready.then((reg) => reg.showNotification('Energy check', opts)); else new Notification('Energy check', opts); }
+    else if (document.visibilityState === 'visible') toast('Energy check — how are you feeling? (Health)');
+  });
+}, 30000);
+
+/* ---------- Fuel & energy report ---------- */
+ui.fuelR = 10; ui.fuelOpen = '';
+function fuelData(n) {
+  const nk = nowInfo().k; const keys = []; for (let i = n - 1; i >= 0; i--) keys.push(addD(nk, -i));
+  const foodDays = keys.filter((x) => peekH(x).food.length);
+  let kcalSum = 0, timed = 0, late = 0, longest = 0;
+  const slotK = {}, slotE = {}, slotW = {}; FSLOTS.forEach(([z]) => { slotK[z] = 0; slotE[z] = []; slotW[z] = 0; });
+  const win = {};
+  keys.forEach((k) => {
+    const h = peekH(k); const W = workBlocks(k); const en = h.en || [];
+    h.food.forEach((f) => { kcalSum += num(f.kcal); if (f.t != null) { timed += num(f.kcal); if (f.t >= 900) late += num(f.kcal); slotK[fSlotOf(f.t)] += num(f.kcal); } });
+    en.forEach(([t, v]) => slotE[fSlotOf(t)].push(v));
+    FSLOTS.forEach(([z, , a, b]) => { slotW[z] += W.reduce((acc, [s2, e2]) => acc + Math.max(0, Math.min(b, e2) - Math.max(a, s2)), 0); });
+    const times = h.food.filter((f) => f.t != null).map((f) => f.t).sort((a, b) => a - b);
+    if (times.length) { const lim = k === nk ? nowInfo().m : 1680; W.forEach(([ws, we]) => { const end = Math.min(we, lim); if (end <= ws) return; let last = times.filter((t) => t <= ws).pop(); if (last == null) last = wakeMin(k); const pts = [last].concat(times.filter((t) => t > ws && t < end), [end]); for (let i = 0; i < pts.length - 1; i++) if (pts[i + 1] > ws) longest = Math.max(longest, pts[i + 1] - pts[i]); }); }
+    W.forEach(([ws, we, wn]) => {
+      for (let cs = ws; cs < we - 44; cs += 120) {
+        const ce = Math.min(we, cs + 120); const id = wn + '|' + cs + '|' + ce;
+        const w = (win[id] = win[id] || { id, wn, cs, ce, days: {} });
+        const taps = en.filter(([t]) => t >= cs && t < ce).map((x) => x[1]);
+        if (!taps.length) continue;
+        const fed = (h.food.length && times.some((t) => t >= cs - 180 && t <= ce)) ? true : times.length ? false : null;
+        w.days[k] = { e: taps.reduce((a, b) => a + b, 0) / taps.length, fed };
+      }
+    });
+  });
+  const avg = (a) => a.reduce((p, q) => p + q, 0) / a.length;
+  const windows = Object.values(win).map((w) => {
+    const ds = Object.values(w.days); if (ds.length < 3) return null;
+    const fedE = ds.filter((d) => d.fed === true).map((d) => d.e), unfedE = ds.filter((d) => d.fed === false).map((d) => d.e);
+    return Object.assign(w, { n: ds.length, en: avg(ds.map((d) => d.e)), fedE, unfedE });
+  }).filter(Boolean);
+  return { keys, foodDays, kcalAvg: foodDays.length ? Math.round(kcalSum / foodDays.length) : 0, latePct: timed ? Math.round((late / timed) * 100) : null, longest, slotK, slotE, slotW, windows, dn: foodDays.length || 1, logged: keys.filter((k) => peekH(k).food.some((f) => f.t != null) && (peekH(k).en || []).length).length };
+}
+function vFuel() {
+  const R = ui.fuelR; const F = fuelData(R); const avg = (a) => a.length ? a.reduce((p, q) => p + q, 0) / a.length : 0;
+  const low = F.windows.filter((w) => w.en <= 2.9).sort((a, b) => a.en - b.en); const good = F.windows.filter((w) => w.en >= 3.5).sort((a, b) => b.en - a.en).slice(0, 3);
+  const dayL = (k) => DOW[parseD(k).getDay()].slice(0, 2);
+  const kmax = Math.max(300, ...FSLOTS.map(([z]) => F.slotK[z] / F.dn));
+  const winRow = (w) => {
+    const open = ui.fuelOpen === w.id; const title = esc(w.wn) + ' · ' + hm12(w.cs) + '–' + hm12(w.ce);
+    const unfedN = w.unfedE.length, fedN = w.fedE.length;
+    const why = unfedN ? 'On ' + unfedN + ' of ' + w.n + ' logged days you\'d eaten nothing in the 3h before it.' : 'You usually had food before it — low anyway, so check sleep or the task itself.';
+    const cmp = fedN >= 3 && unfedN >= 3 ? 'days you ate in the 3h before → ' + avg(w.fedE).toFixed(1) + '/5. Days you didn\'t → ' + avg(w.unfedE).toFixed(1) + '/5.' : 'needs at least 3 days with and 3 without food before it (now ' + fedN + ' with, ' + unfedN + ' without).';
+    const snack = Math.max(w.cs - 30, 240);
+    return '<div style="border-top:1px solid var(--line)"><button class="tap row" data-a="fuelOpen" data-id="' + esc(w.id) + '" aria-expanded="' + open + '" style="padding:10px 0;gap:12px"><span style="width:44px;height:44px;flex:0 0 44px;border-radius:12px;background:var(--warn-bg);color:var(--warn-fg);display:flex;flex-direction:column;align-items:center;justify-content:center"><span class="xb" style="font-size:15px">' + w.en.toFixed(1) + '</span><span style="font-size:9px;font-weight:700">/5</span></span><span class="grow"><span class="b" style="display:block;font-size:15px">' + title + '</span><span class="small muted" style="display:block;line-height:1.4">' + why + '</span></span></button>' +
+      (open ? '<div style="background:var(--soft);border-radius:12px;padding:10px 12px;margin-bottom:10px;display:flex;flex-direction:column;gap:8px"><div class="small b muted">Energy in this window, day by day</div><div class="row" style="gap:4px">' + F.keys.slice(-10).map((k) => { const d = w.days[k]; return '<div style="flex:1 1 0;display:flex;flex-direction:column;align-items:center;gap:3px"><i style="display:block;width:100%;height:26px;border-radius:6px;background:' + (d ? enCol(d.e) : 'var(--line)') + '"></i><span style="font-size:9px" class="muted">' + dayL(k) + '</span></div>'; }).join('') + '</div>' +
+        '<div class="small" style="line-height:1.45"><b>Compare:</b> ' + cmp + '</div><div class="small" style="line-height:1.45;color:var(--good-fg);background:var(--good-bg);border-radius:10px;padding:8px 10px"><b>Try:</b> a ~300 kcal snack around ' + hm12(snack) + ' on ' + esc(w.wn) + ' days.</div><button class="btn sm" data-a="fuelRemind" data-t="' + snack + '" data-wn="' + esc(w.wn) + '">Remind me next time at ' + hm12(snack) + '</button></div>' : '') + '</div>';
+  };
+  return backHead('Fuel & energy', 'What you eat, when, against your work routine', 'health') +
+    '<div class="chips">' + [[10, 'Last 10 days'], [30, 'Last 30 days']].map(([v, l]) => '<button class="chip' + (R === v ? ' on' : '') + '" data-a="fuelRange" data-v="' + v + '">' + l + '</button>').join('') + '</div>' +
+    '<section class="grid3">' + [['Avg calories', F.kcalAvg ? F.kcalAvg.toLocaleString() : '—', 'goal ' + db.settings.kcalGoal], ['After 3 pm', F.latePct == null ? '—' : F.latePct + '%', 'of daily kcal'], ['Longest gap', F.longest ? fmtDur(F.longest) : '—', 'while working']].map(([l, v, sub]) => '<div class="card" style="padding:12px;gap:2px"><div style="font-size:11px" class="muted b">' + l + '</div><div class="xb" style="font-size:20px">' + v + '</div><div style="font-size:11px" class="muted">' + sub + '</div></div>').join('') + '</section>' +
+    '<section class="card"><h2>Average day</h2><div class="small muted">Bars = calories eaten in that part of the day. Circle = your average energy there.</div><div style="display:grid;grid-template-columns:repeat(6,1fr);gap:6px;align-items:end;height:150px">' +
+      FSLOTS.map(([z]) => { const kc = Math.round(F.slotK[z] / F.dn); const e = avg(F.slotE[z]); return '<div style="height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:4px"><span style="width:28px;height:28px;border-radius:14px;background:' + enCol(e) + ';color:#fff;font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center">' + (e ? e.toFixed(1) : '') + '</span><span class="small xb" style="color:var(--meal-fg)">' + (kc || '—') + '</span><i style="display:block;width:100%;height:' + Math.max(4, Math.round((kc / kmax) * 90)) + 'px;border-radius:8px 8px 4px 4px;background:' + (kc ? 'var(--meal)' : 'var(--soft)') + '"></i></div>'; }).join('') + '</div>' +
+      '<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:6px;text-align:center">' + FSLOTS.map(([z, l]) => { const wm = F.slotW[z] / F.keys.length; return '<div><div style="font-size:11px;font-weight:700">' + l + '</div><div style="font-size:10px" class="muted">' + (wm >= 30 ? Math.round(wm / 6) / 10 + 'h work' : 'little work') + '</div></div>'; }).join('') + '</div></section>' +
+    '<section class="card tight"><div class="head"><h2>Your low-power windows</h2></div>' + (low.length ? low.map(winRow).join('') : empty(F.logged < 3 ? 'Not enough data yet — ' + F.logged + ' of 10 days have food times and energy taps. Keep tapping energy 2–4 times a day.' : 'No low-power windows found. Nice.')) + '</section>' +
+    (good.length ? '<section class="card tight"><div class="head"><h2>Strongest windows</h2></div>' + good.map((w) => '<div class="list-row"><span class="grow b" style="font-size:14px">' + esc(w.wn) + ' · ' + hm12(w.cs) + '–' + hm12(w.ce) + '</span><span class="pill" style="background:var(--good-bg);color:var(--good-fg)">' + w.en.toFixed(1) + '/5</span></div>').join('') + '</section>' : '') +
+    '<div class="small muted" style="text-align:center;line-height:1.5">A window shows once it has energy taps on at least 3 days. The with/without comparison needs 3 days of each, so one bad day can\'t decide it.</div>';
+}
+Object.assign(A, {
+  fuelRange: (d) => { ui.fuelR = +d.v; render(true); },
+  fuelOpen: (d) => { ui.fuelOpen = ui.fuelOpen === d.id ? '' : d.id; render(true); },
+  fuelRemind: (d) => {
+    const t = +d.t; const nk = nowInfo(); let day = nk.k; if (nk.m >= t) day = addD(day, 1);
+    const wn = d.wn; for (let i = 0; i < 8; i++) { if (workBlocks(day).some((b) => b[2] === wn)) break; day = addD(day, 1); }
+    const real = t >= 1440 ? addD(day, 1) : day; const m = t % 1440;
+    db.reminders.push({ id: uid(), t: 'Snack (~300 kcal) before ' + wn, when: real + 'T' + String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'), done: false });
+    commit('Reminder set · ' + nice(real) + ' ' + hm12(t));
+  }
+});
+
 /* ========================== MY OWN CATEGORIES ========================== */
 const colorKey = (c) => ['tent', 'doc', 'study', 'work', 'meal', 'rest', 'pray'].includes(c) ? c : c === 'personal' ? 'meal' : 'work';
 const CUSTOM_COLORS = ['#0F766E', '#B45309', '#7C3AED', '#BE185D', '#0369A1', '#4D7C0F', '#9F1239', '#475569'];
@@ -564,8 +736,8 @@ function catsCard() {
 }
 
 /* ========================== REGISTER ========================== */
-Object.assign(ROUTES, { shutdown: vShutdown, focus: vFocus, goals: vGoals, hstats: vHabitStats, workout: vWorkoutSimple, wplay: vWorkoutPlay });
-Object.assign(NAVPARENT, { shutdown: 'today', focus: 'home', goals: 'today', hstats: 'today', workout: 'health', wplay: 'health' });
+Object.assign(ROUTES, { shutdown: vShutdown, focus: vFocus, goals: vGoals, hstats: vHabitStats, workout: vWorkoutSimple, wplay: vWorkoutPlay, fuel: vFuel });
+Object.assign(NAVPARENT, { shutdown: 'today', focus: 'home', goals: 'today', hstats: 'today', workout: 'health', wplay: 'health', fuel: 'health' });
 const _finish = A.finish;
 Object.assign(A, {
   finish: () => { const k = ui.tDate || nowInfo().k; if (day(k).fin) { day(k).fin = false; return commit('Day reopened'); } ui.sd = { k, dest: {} }; location.hash = '#shutdown'; },
