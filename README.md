@@ -2,7 +2,7 @@
 
 Mo's personal phone app for planning, tracking and reviewing each day. It's a PWA (installable web app) that works offline.
 
-**Screens:** Home dashboard · Today (schedule, prayers, habits, reflection, plan tomorrow) · Tasks · Money (personal spending by sector, household split box) · Health (weight, food, water, exercise, sleep, screen time) · Habits (reading, typing, public speaking, idea parking) · Reports (10-day progress) · Inbox (reminders and ideas) · Settings (theme, goals, backup).
+**Screens:** Home dashboard · Today (schedule, prayers, habits, reflection, plan tomorrow) · Tasks · Money (personal spending by sector, household split box) · Health (weight, food, water, exercise, sleep, screen time) · Habits (reading, typing, public speaking, idea parking) · English speaking practice (30-minute session, interview questions, ratings, tricky words) · Reports (10-day progress) · Inbox (reminders and ideas) · Settings (theme, goals, backup).
 
 ## How it works
 - It's plain HTML, CSS and JS with no build step and no frameworks. It's fast on any phone.
