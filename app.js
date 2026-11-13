@@ -1,6 +1,6 @@
 'use strict';
 /* Daily Life — single-file app. Data lives on the phone (localStorage), works offline. */
-const VERSION = '2.3.0';
+const VERSION = '2.4.0';
 const KEY = 'dl:v1';
 const START = '2026-11-09'; // cycle 1, day 1
 
@@ -36,6 +36,7 @@ const DEF = () => ({
   days: {}, health: {},
   habits: { book: null, finished: [], typing: [], speaking: [], notes: [] },
   periods: {}, timer: null,
+  world: { home: { name: 'Sydney', lat: -33.87, lon: 151.21 }, places: [], trips: [] },
   meta: { created: Date.now(), updated: 0, lastBackup: 0 }
 });
 function normalize(raw) {
@@ -278,6 +279,7 @@ function vHome() {
     (function () { const dl = deadlinesSoon(14, 3); return dl.length ? '<section class="card tight"><div class="head"><h2>Deadlines</h2><a class="link" href="#calendar" style="color:var(--muted)">Calendar ›</a></div>' + dl.map((o) => dlBox(o, k)).join('') + '</section>' : ''; })() +
     '<section aria-label="Challenges"><div class="head" style="margin-bottom:8px"><h2>Challenges</h2><a class="link" href="#reports" style="color:var(--muted)">Reports ›</a></div><div class="grid2">' + ch + '</div></section>' +
     '<section class="card tight"><div class="head"><h2>Top 3 today</h2><a class="link" href="#tasks" style="color:var(--muted)">All tasks ›</a></div><div>' + topHtml + '</div></section>' +
+    (window.worldMini ? worldMini() : '') +
     '<section class="card tight"><div class="head"><h2>Ideas</h2><a class="link" href="#inbox" data-a="inboxTab" data-tab="idea" style="color:var(--muted)">Inbox ›</a></div>' +
     '<div class="row"><label class="sr" for="qidea">Capture an idea</label><input id="qidea" class="in grow" placeholder="Capture an idea…" enterkeyhint="done" data-enter="ideaAdd"><button class="iconbtn" data-a="ideaAdd" aria-label="Save idea" style="background:var(--btn);color:var(--btnInk);border:0">' + ic('plus', 20, 2.4) + '</button></div>' +
     (db.ideas.slice(0, 3).map((x) => '<div class="sm" style="padding:6px 0;border-top:1px solid var(--line)">' + esc(x.t) + '</div>').join('') || '') + '</section>' +
